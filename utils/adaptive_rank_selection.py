@@ -214,15 +214,15 @@ def training_step(model, batch, pad_token_id, args, compression_calculator):
 
     scale1, scale2 = 16, 10 # lambda and gamma, respectively, from paper
 
+    with torch.no_grad():
+        current_param_ratio = compression_calculator.get_compression()
+        keep_ratio = compression_calculator.get_sv_ratio()
+
     # if compression is reached, ignore compression regularizer
     if abs(current_param_ratio - args.target_param_ratio) < 0.002: 
         scale1 = 0
 
     loss = logits_loss + scale1 * r_loss + scale2 * r_align_loss
-
-    with torch.no_grad():
-        current_param_ratio = compression_calculator.get_compression()
-        keep_ratio = compression_calculator.get_sv_ratio()
 
     return loss, logits_loss, r_align_loss, r_loss, perplexity, keep_ratio, current_param_ratio
 
