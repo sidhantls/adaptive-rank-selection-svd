@@ -38,7 +38,7 @@ class Hypernetwork(nn.Module):
         Output: (batch_size, timesteps, output_size)
         """
         
-        out, _ = self.bi_gru(self.z)
+        out, _ = self.bi_gru(self.z.to(self.linear.weight.dtype))
         out = self.layer_norm(out)
         out = self.activation(out)
         out = self.linear(out)[0, :, 0]
