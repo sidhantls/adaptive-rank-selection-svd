@@ -212,7 +212,13 @@ def training_step(model, batch, pad_token_id, args, compression_calculator):
     r_align_loss = calculate_r_align(compression_calculator)
     r_loss = calculate_R_loss(compression_calculator, args.target_param_ratio)
 
-    loss = logits_loss + r_align_loss + r_loss
+    scale1, scale2 = 16, 10 # lambda and gamma, respectively, from paper
+
+    # if compression is reached, ignore compression regularizer
+    if abs(current_param_ratio - args.target_param_ratio) < 0.002: 
+        scale1 = 0
+
+    loss = logits_loss + scale1 * r_loss + scale2 * r_align_loss
 
     with torch.no_grad():
         current_param_ratio = compression_calculator.get_compression()
@@ -236,7 +242,6 @@ def eval_model(model, test_dl, pad_token_id, args, compression_calculator):
         metrics['keep_ratio'].append(keep_ratio)
         metrics['perplexity'].append(perplexity.item())
         metrics['r_loss'].append(r_loss)
-        del distill_batch
 
     for key in metrics:
         metrics[key] = sum(metrics[key]) / len(metrics[key])
