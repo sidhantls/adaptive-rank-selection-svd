@@ -30,15 +30,17 @@ class Hypernetwork(nn.Module):
         self.layer_norm = nn.LayerNorm(hidden_size * 2)
         self.activation = nn.GELU()
         self.linear = nn.Linear(hidden_size * 2, 1)
-        self.z = torch.randn(1, num_singular_values, input_size)  # Normal distribution input
+        #self.z = torch.randn(1, num_singular_values, input_size)  # Normal distribution input
+        self.z = torch.nn.Parameter(torch.randn(1, num_singular_values, input_size)) # use nn.param for device and type consistency
+        self.z.requires_grad=False
 
     def forward(self):
         """
         Input: (batch_size, timesteps, input_size)
         Output: (batch_size, timesteps, output_size)
         """
-        
-        out, _ = self.bi_gru(self.z.to(self.linear.weight.dtype))
+        self.z.requires_grad=False 
+        out, _ = self.bi_gru(self.z)
         out = self.layer_norm(out)
         out = self.activation(out)
         out = self.linear(out)[0, :, 0]
@@ -170,8 +172,9 @@ def calculate_r_align(compression_calculator):
             k = module.calculate_mask(False).sum().item()
             m = torch.zeros_like(module.E_train_mask, device=module.E_train_mask.device, requires_grad=False)
             m[:k] = 1.
-
-        loss += torch.sum((module.E_train_mask * module.E - m * module.E)**2)
+        
+        E = module.E.to(module.E_train_mask.dtype).to(module.E_train_mask.device)
+        loss += torch.sum((module.E_train_mask * E - m * E)**2)
 
     loss = loss/len(compression_calculator.lowrank_layers)
     return loss
