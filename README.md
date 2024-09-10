@@ -3,6 +3,9 @@ This repository contains the implementation (unofficial) of the paper "Adaptive 
 
 <p align="center">
 <img src="outline.png" alt="Outline Image" width="50%" />
+  <p style="font-size: 14px; color: gray;">
+    <a href="https://aclanthology.org/2024.naacl-long.13.pdf">Figure 1</a>
+  </p>
 </p>
 
 ## Implementation Caveats:
