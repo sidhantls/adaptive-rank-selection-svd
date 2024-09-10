@@ -227,11 +227,11 @@ def training_step(model, batch, pad_token_id, args, compression_calculator):
         keep_ratio = compression_calculator.get_sv_ratio()
 
     # if compression is reached, ignore compression regularizer
-    lambda_scale = args.lambda
+    lambda_scale = args.lambda_scale
     if abs(current_param_ratio - args.target_param_ratio) < 0.002: 
         lambda_scale = 0
 
-    loss = logits_loss + lambda_scale * r_loss + args.gamma * r_align_loss
+    loss = logits_loss + lambda_scale * r_loss + args.gamma_scale * r_align_loss
 
     return loss, logits_loss, r_align_loss, r_loss, perplexity, keep_ratio, current_param_ratio
 
