@@ -86,6 +86,10 @@ parser.add_argument("--seed", type=int, default=233, help="Seed used in experime
 
 parser.add_argument("--tau", type=float, default=0.4, help="Tau for gumbel sigmoid")
 
+parser.add_argument("--lambda", type=float, default=16., help="Scale factor for compression regularization loss")
+
+parser.add_argument("--gamma", type=float, default=10., help="Scale factor of alignment loss")
+
 args = parser.parse_args()
 
 # constant
