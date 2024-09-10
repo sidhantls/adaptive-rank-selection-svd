@@ -279,8 +279,6 @@ with open(stats_path, 'w') as f:
     json.dump(compression_metadata, f)
 wandb.Artifact(name="compression_metadata", type="dataset").add_file(stats_path)
    
-pdb.set_trace()
-
 # evaluate the final model as well
 if args.eval_full:
     if torch.cuda.is_available(): model = model.cuda()
