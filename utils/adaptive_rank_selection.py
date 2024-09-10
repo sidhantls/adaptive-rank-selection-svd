@@ -114,7 +114,7 @@ class LowrankLinear(torch.nn.Module):
         Returns:
             torch.Tensor: Output tensor.
         """
-        if self.use_stored_masks: 
+        if self.use_stored_masks: # doesnt work for some reason, ignore
             return self.E_train_mask > 0.5
         
         self.E_train_mask = self.calculate_mask(is_training=self.training)
@@ -147,6 +147,7 @@ class LowrankLinear(torch.nn.Module):
             # if compression_rate > 0.97:
             #     E_train_mask = torch.ones_like(self.E_train, dtype=torch.bool)
 
+        # during model convertion, we should use topk
         if return_topk: 
             m = torch.zeros_like(E_train_mask, device=E_train_mask.device, requires_grad=False)
             m[:E_train_mask.sum().item()] = 1.
@@ -171,7 +172,6 @@ def calculate_r_align(compression_calculator):
             m[:k] = 1.
 
         loss += torch.sum((module.E_train_mask * module.E - m * module.E)**2)
-        # loss += torch.sum(module.E_train_mask)
 
     loss = loss/len(compression_calculator.lowrank_layers)
     return loss
