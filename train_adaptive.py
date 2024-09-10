@@ -51,8 +51,6 @@ parser.add_argument("--num_test_samples", type=int, default=256,
 
 parser.add_argument("--max_length", type=int, default=512, help="Maximum number of input tokens")
 
-parser.add_argument("--epochs", type=int, default=5, help="The number of epochs")
-
 parser.add_argument("--lr", type=float, default=1e-5,
                     help="Learning rate")
 
@@ -74,7 +72,7 @@ parser.add_argument("--act_aware", type=str, default='', help='Loss/activation a
 
 parser.add_argument("--alpha", type=float, default=1., help="Alpha hyperparameter for act_aware")
 
-parser.add_argument("--target_param_ratio", type=float, help="Target compression")
+parser.add_argument("--target_param_ratio", type=float, help="Target compression", required=True)
 
 parser.add_argument('--ignore_first_layer', action='store_true', default=False, help='Do not perform compression on first layer')
 
@@ -90,13 +88,10 @@ parser.add_argument("--tau", type=float, default=0.4, help="Tau for gumbel sigmo
 
 args = parser.parse_args()
 
+# constant
 args.layer_type='adaptive'
-args.fix_compress_ratio = None 
-args.start_zero_compression = None
 args.distill_mode = None
-args.only_compress = ''
-args.scale_singular_values = False
-args.compress_loss = ''
+args.epochs=1
 
 os.makedirs(args.cache_dir, exist_ok=True)
 
@@ -163,7 +158,6 @@ if args.act_aware:
         raise NotImplementedError(f'Activation aware {args.act_aware} not supported')
 
 # add low-rank decomposed layers and set grads 
-
 model = model.cpu(); torch.cuda.empty_cache() # move to cpu for layer editing
 lowrank_modeling.replace_with_lowrank_linear(model, args, svd_info)
 train_utils.configure_required_grad(model)
@@ -240,16 +234,16 @@ for epoch in range(args.epochs):
         # eval every steps: for pre-training objective
         if batch_idx and args.eval_freq_steps and (batch_idx % args.eval_freq_steps) == 0:
             model = model.eval()
-            adaptive_rank_selection.freeze_model_masks(model, should_freeze=True)
+            # adaptive_rank_selection.freeze_model_masks(model, should_freeze=True)
 
             metrics = adaptive_rank_selection.eval_model(model, test_dl, tokenizer.pad_token_id, args, compression_calculator)
             harness_metrics = eval_utils.evaluate_with_harness(model, tokenizer, device=model.device, debug=args.debug, batch_size=args.batch_size)
         
             wandb.log({**metrics, **harness_metrics, 'step': global_step})
-            adaptive_rank_selection.freeze_model_masks(model, should_freeze=False)
+            # adaptive_rank_selection.freeze_model_masks(model, should_freeze=False)
             model = model.train()
 
-        window_size = 20 # continue training for 500 more steps after target is reached
+        window_size = 20 # continue training for X more steps after target is reached
         current_mean = np.mean(param_ratios[-window_size:])
         short_mean = np.mean(param_ratios[-30:])
 
@@ -257,35 +251,24 @@ for epoch in range(args.epochs):
  
         # if pre-training mode, early stop after 5% more steps if performance is constant
         if is_compression_reached: 
-            print(f'\n\nCompression Ratio: {current_mean} reached for 500 steps, early stopping training...\n\n')
+            print(f'\nCompression Ratio: {current_mean} reached for {window_size} steps, early stopping training...\n')
             break
-    
+
     if is_compression_reached:
         break 
     
-    if epoch and (epoch % args.eval_freq) == 0:
-        model = model.eval()
-        adaptive_rank_selection.freeze_model_masks(model, should_freeze=True)
-
-        metrics = adaptive_rank_selection.eval_model(model, test_dl, tokenizer.pad_token_id, args, compression_calculator)
-        harness_metrics = eval_utils.evaluate_with_harness(model, tokenizer, device=model.device, debug=args.debug, batch_size=args.batch_size)
-    
-        wandb.log({**metrics, **harness_metrics, 'step': global_step})
-        adaptive_rank_selection.freeze_model_masks(model, should_freeze=False)
-        model = model.train()
-
     epoch_loss = epoch_loss/num_batches
     wandb.log({'train/epoch_loss': epoch_loss, 'step': epoch})
 
-if not args.debug and not (epoch % args.eval_freq == 0) or is_compression_reached: # if is_compression_reached=True, then training was terminated
-    model = model.eval(); adaptive_rank_selection.freeze_model_masks(model, should_freeze=True)
+# if not args.debug and not (epoch % args.eval_freq == 0) or is_compression_reached: # if is_compression_reached=True, then training was terminated
+#     model = model.eval(); adaptive_rank_selection.freeze_model_masks(model, should_freeze=True)
 
-    metrics = adaptive_rank_selection.eval_model(model, test_dl, tokenizer.pad_token_id, args, compression_calculator)
-    harness_metrics = eval_utils.evaluate_with_harness(model, tokenizer, device=model.device, debug=args.debug, batch_size=args.batch_size)
+#     metrics = adaptive_rank_selection.eval_model(model, test_dl, tokenizer.pad_token_id, args, compression_calculator)
+#     harness_metrics = eval_utils.evaluate_with_harness(model, tokenizer, device=model.device, debug=args.debug, batch_size=args.batch_size)
 
-    wandb.log({**metrics, **harness_metrics, 'step': global_step})
-    adaptive_rank_selection.freeze_model_masks(model, should_freeze=False)
-    model = model.train()
+#     wandb.log({**metrics, **harness_metrics, 'step': global_step})
+#     adaptive_rank_selection.freeze_model_masks(model, should_freeze=False)
+#     model = model.train()
 
 print('Training complete.')
 
@@ -296,14 +279,17 @@ with open(stats_path, 'w') as f:
     json.dump(compression_metadata, f)
 wandb.Artifact(name="compression_metadata", type="dataset").add_file(stats_path)
    
+pdb.set_trace()
 
 # evaluate the final model as well
 if args.eval_full:
     if torch.cuda.is_available(): model = model.cuda()
-    model = model.eval().half(); adaptive_rank_selection.freeze_model_masks(model, should_freeze=True)
+    model = model.eval()
+    model = model.half()
+    # adaptive_rank_selection.freeze_model_masks(model, should_freeze=True)
 
     harness_metrics_full = eval_utils.evaluate_with_harness_full(model, tokenizer, device, debug=args.debug, batch_size=args.eval_batch_size)
-    harness_metrics_full = {'final_' + k: v for k, v in harness_metrics_full.items()}
+    harness_metrics_full = {'final_bc_' + k: v for k, v in harness_metrics_full.items()} # evaluate before converting the model, sanity check
     wandb.log({**harness_metrics_full, 'step': global_step})
     print('Final harness results: \n', harness_metrics_full, '\n')
 
@@ -338,7 +324,8 @@ if args.save_model:
 # evaluate the final model as well
 if args.eval_full:
     if torch.cuda.is_available(): model = model.cuda()
-    model = model.eval(); adaptive_rank_selection.freeze_model_masks(model, should_freeze=True)
+    model = model.eval(); 
+    # adaptive_rank_selection.freeze_model_masks(model, should_freeze=True)
 
     harness_metrics_full = eval_utils.evaluate_with_harness_full(model, tokenizer, device, debug=args.debug, batch_size=args.eval_batch_size)
     harness_metrics_full = {'final_' + k: v for k, v in harness_metrics_full.items()}
