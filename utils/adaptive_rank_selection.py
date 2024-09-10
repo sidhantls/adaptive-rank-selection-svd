@@ -30,15 +30,17 @@ class Hypernetwork(nn.Module):
         self.layer_norm = nn.LayerNorm(hidden_size * 2)
         self.activation = nn.GELU()
         self.linear = nn.Linear(hidden_size * 2, 1)
-        self.z = torch.randn(1, num_singular_values, input_size)  # Normal distribution input
+        #self.z = torch.randn(1, num_singular_values, input_size)  # Normal distribution input
+        self.z = torch.nn.Parameter(torch.randn(1, num_singular_values, input_size)) # use nn.param for device and type consistency
+        self.z.requires_grad=False
 
     def forward(self):
         """
         Input: (batch_size, timesteps, input_size)
         Output: (batch_size, timesteps, output_size)
         """
-        
-        out, _ = self.bi_gru(self.z.to(self.linear.weight.dtype))
+        self.z.requires_grad=False 
+        out, _ = self.bi_gru(self.z)
         out = self.layer_norm(out)
         out = self.activation(out)
         out = self.linear(out)[0, :, 0]
@@ -170,8 +172,9 @@ def calculate_r_align(compression_calculator):
             k = module.calculate_mask(False).sum().item()
             m = torch.zeros_like(module.E_train_mask, device=module.E_train_mask.device, requires_grad=False)
             m[:k] = 1.
-
-        loss += torch.sum((module.E_train_mask * module.E - m * module.E)**2)
+        
+        E = module.E.to(module.E_train_mask.dtype).to(module.E_train_mask.device)
+        loss += torch.sum((module.E_train_mask * E - m * E)**2)
 
     loss = loss/len(compression_calculator.lowrank_layers)
     return loss
@@ -219,17 +222,16 @@ def training_step(model, batch, pad_token_id, args, compression_calculator):
     r_align_loss = calculate_r_align(compression_calculator)
     r_loss = calculate_R_loss(compression_calculator, args.target_param_ratio)
 
-    scale1, scale2 = 16, 10 # lambda and gamma, respectively, from paper
-
     with torch.no_grad():
         current_param_ratio = compression_calculator.get_compression()
         keep_ratio = compression_calculator.get_sv_ratio()
 
     # if compression is reached, ignore compression regularizer
+    lambda_scale = args.lambda_scale
     if abs(current_param_ratio - args.target_param_ratio) < 0.002: 
-        scale1 = 0
+        lambda_scale = 0
 
-    loss = logits_loss + scale1 * r_loss + scale2 * r_align_loss
+    loss = logits_loss + lambda_scale * r_loss + args.gamma_scale * r_align_loss
 
     return loss, logits_loss, r_align_loss, r_loss, perplexity, keep_ratio, current_param_ratio
 
