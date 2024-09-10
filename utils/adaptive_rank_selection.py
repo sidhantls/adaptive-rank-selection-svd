@@ -7,7 +7,6 @@ import torch.nn.functional as F
 import pdb
 from collections import defaultdict
 from tqdm import tqdm 
-import os 
 
 
 def gumbel_sigmoid(logits, tau=0.5):
@@ -184,8 +183,8 @@ def calculate_R_loss(compression_calculator, target_param_ratio:int):
     target_params = target_param_ratio * total_orignal_params
 
     a = total_new_params
-    # if total_new_params.item() < target_params:
-    #     a = torch.tensor(target_params)
+    if total_new_params.item() < target_params:
+        a = torch.tensor(target_params)
     
     loss = torch.log(a/target_params)
     return loss
