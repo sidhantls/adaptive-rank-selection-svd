@@ -74,8 +74,6 @@ parser.add_argument("--alpha", type=float, default=1., help="Alpha hyperparamete
 
 parser.add_argument("--target_param_ratio", type=float, help="Target compression", required=True)
 
-parser.add_argument('--ignore_first_layer', action='store_true', default=False, help='Do not perform compression on first layer')
-
 parser.add_argument('--save_model', type=str, default='reconstruct',  help='Method to save model', choices=['reconstruct', 'use_mask'])
 
 parser.add_argument('--load_act_cache', action='store_true', default=False, help='Loads activation cache')
