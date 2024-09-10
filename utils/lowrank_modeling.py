@@ -107,14 +107,12 @@ def get_compression_metadata(model):
         layer_idx = linear_info[module]['full_name'].split('.')[2]
         assert layer_idx.isnumeric(), f'layer_idx not numeric: {layer_idx}'
 
-        weights = module.E_train.detach()
-
         mask = module.calculate_mask(is_training=False)
         r = int(round(mask.sum().item()))
         param_ratio = r * (module.in_features + module.out_features) / (module.in_features * module.out_features)
 
         compression_logs.append({'layer_idx': layer_idx, 'layer_name': layer_name, 'param_ratio': param_ratio, 'in_features': module.in_features, 'out_features': module.out_features, 
-                                 'length': len(weights), 'weights': weights.tolist(), 'topk': r, 'mask': mask.tolist()}
+                                 'length': len(mask), 'topk': r, 'mask': mask.tolist()}
                                  )
 
     return compression_logs
