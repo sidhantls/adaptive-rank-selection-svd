@@ -254,5 +254,3 @@ def freeze_model_masks(model, should_freeze=True):
     for _, module in model.named_modules():
         if 'Lowrank' in str(module)[:7]:
             module.use_stored_masks = should_freeze
-
-    
