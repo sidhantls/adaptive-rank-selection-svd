@@ -160,6 +160,9 @@ class LowrankLinear(torch.nn.Module):
         return self.__str__()
     
 def calculate_r_align(compression_calculator):
+    """
+    Loss to align learned mask to singular value properties
+    """
     loss = 0.
     for module in compression_calculator.lowrank_layers: 
         with torch.no_grad():
@@ -174,6 +177,10 @@ def calculate_r_align(compression_calculator):
     return loss
 
 def calculate_R_loss(compression_calculator, target_param_ratio:int):
+    """
+    Compression regularizer
+    
+    """
     total_new_params = 0. 
     total_orignal_params = 0.
     for module in compression_calculator.lowrank_layers: 
