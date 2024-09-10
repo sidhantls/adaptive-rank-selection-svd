@@ -203,7 +203,7 @@ for epoch in range(args.epochs):
         #     distill_batch = {}
 
         with torch.autocast(device_type=model.device.type, dtype=train_precision, enabled=use_amp):
-            loss, logits_loss, r_align_loss, r_loss, perplexity, keep_ratio, current_param_ratio = adaptive_rank_selection.training_step(model, batch, tokenizer.pad_token_id, args, compression_calculator)
+            loss, logits_loss, r_align_loss, r_loss, perplexity, keep_ratio, current_param_ratio, lambda_scale = adaptive_rank_selection.training_step(model, batch, tokenizer.pad_token_id, args, compression_calculator)
 
         scaler.scale(loss).backward()
 
@@ -220,7 +220,9 @@ for epoch in range(args.epochs):
             "train/perplexity": perplexity.item(), 
             "train/r_loss": r_loss, 
             "train/lr": optimizer.param_groups[0]['lr'],
+            "train/target_param_ratio": args.target_param_ratio,
             "train/compression_ratio": current_param_ratio,
+            "train/lambda_scale": lambda_scale,
             "step": global_step
         }
         
@@ -245,9 +247,8 @@ for epoch in range(args.epochs):
             # adaptive_rank_selection.freeze_model_masks(model, should_freeze=False)
             model = model.train()
 
-        window_size = 20 # continue training for X more steps after target is reached
+        window_size = 5 # continue training for X more steps after target is reached
         current_mean = np.mean(param_ratios[-window_size:])
-        short_mean = np.mean(param_ratios[-30:])
 
         is_compression_reached = len(param_ratios) > window_size and (current_mean - args.target_param_ratio) < 0.0015
  
