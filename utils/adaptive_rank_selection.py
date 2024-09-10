@@ -1,0 +1,259 @@
+"""
+Contains implementation regarding https://aclanthology.org/2024.naacl-long.13.pdf
+"""
+import torch 
+from torch import nn
+import torch.nn.functional as F
+import pdb
+from collections import defaultdict
+from tqdm import tqdm 
+import os 
+
+
+def gumbel_sigmoid(logits, tau=0.5):
+    """Apply Gumbel Sigmoid to logits"""
+
+    def sample_gumbel(shape, dtype, device, eps=1e-20):
+        """Sample from Gumbel(0, 1)"""
+        U = torch.rand(shape, device=device, dtype=dtype)
+        return -torch.log(-torch.log(U + eps) + eps)
+
+    gumbel_noise = sample_gumbel(logits.shape, logits.dtype, logits.device)
+    gumbel_logits = logits + gumbel_noise
+    y_soft = torch.sigmoid(gumbel_logits / tau)
+    return y_soft
+
+class Hypernetwork(nn.Module):
+    def __init__(self, num_singular_values, input_size, hidden_size):
+        super(Hypernetwork, self).__init__()
+        
+        self.bi_gru = nn.GRU(input_size, hidden_size, batch_first=True, bidirectional=True)
+        self.layer_norm = nn.LayerNorm(hidden_size * 2)
+        self.activation = nn.GELU()
+        self.linear = nn.Linear(hidden_size * 2, 1)
+        self.z = torch.randn(1, num_singular_values, input_size)  # Normal distribution input
+
+    def forward(self):
+        """
+        Input: (batch_size, timesteps, input_size)
+        Output: (batch_size, timesteps, output_size)
+        """
+        
+        out, _ = self.bi_gru(self.z)
+        out = self.layer_norm(out)
+        out = self.activation(out)
+        out = self.linear(out)[0, :, 0]
+        return out
+    
+class LowrankLinear(torch.nn.Module):
+    def __init__(self, current_layer, svd_vector, alpha=1., niter=2, tau=0.4):
+        """
+        Decomposes the weight in a linear layer into its singular vectors and values and introduces a learnable mask.
+
+        Args:
+            current_layer (nn.Linear): Current linear layer to be decomposed.
+            init_frac (float): Initial fraction of singular values to use (default: 1.0).
+            svd_vector (torch.Tensor, optional): Weight scales for weighted SVD.
+            alpha (float): Hyperparameter for weighted ASVD (default: 1.0).
+            niter (int): Number of SVD iterations (default: 2).
+            tau (float): Temperature of Gumbel sigmoid (lower values create harder boundaries) (default: 0.1).
+            bias_init (bool): Flag to add bias in initialization of the weights (default: False).
+            mask_eval_type (str): Type of evaluation mode: 'topk', 'threshold', or '' (default: "").
+            fix_compress_ratio (float, optional): Fixed compression ratio.
+        """
+        super(LowrankLinear, self).__init__()
+
+        if not isinstance(current_layer, torch.nn.Linear):
+            raise ValueError(f"Expected input into SVDLayer be of instance nn.Linear, got {type(current_layer)}")
+        
+        # bias to add to gumbel sigmoid to ensure full rank is selected
+        self.b = 3.
+
+        dtype = current_layer.weight.dtype
+        self.in_features, self.out_features = current_layer.in_features, current_layer.out_features
+        self.rank = min(current_layer.weight.shape[1], current_layer.weight.shape[0])
+
+        weight = current_layer.weight.float()
+        layer_device = weight.device
+
+        if torch.cuda.is_available():
+            weight = weight.cuda()
+
+        if svd_vector is not None: 
+            svd_vector = svd_vector.to(weight.device)**alpha
+            weight = weight * svd_vector.unsqueeze(0)
+        
+        with torch.no_grad():
+            U, E, V = torch.svd_lowrank(weight, 
+                                        q=self.rank,
+                                        niter=niter)
+        
+        if svd_vector is not None: 
+            V = V / svd_vector.unsqueeze(1)
+        
+        U, E, V = U.to(layer_device), E.to(layer_device), V.to(layer_device)
+
+        assert len(E.shape) == 1, 'expected singular values to have only one dim'
+
+        # precompute EV for efficency
+        self.UE = torch.nn.Parameter((U * E.unsqueeze(0)).to(dtype), requires_grad=True)
+        self.V_t = torch.nn.Parameter(V.T.to(dtype), requires_grad=True)
+        self.E = E
+        self.E.requires_grad=False
+
+        self.E_train = Hypernetwork(len(self.E), 32, 64)
+        self.tau = tau
+        self.use_stored_masks = False
+
+    def forward(self, inputs):
+        """
+        Computes forward pass with selection of singular values through predicted mask.
+
+        Args:
+            inputs (torch.Tensor): Input tensor.
+
+        Returns:
+            torch.Tensor: Output tensor.
+        """
+        if self.use_stored_masks: 
+            return self.E_train_mask > 0.5
+        
+        self.E_train_mask = self.calculate_mask(is_training=self.training)
+        inputs = inputs.transpose(1, 2)
+        output = (self.UE * self.E_train_mask.unsqueeze(0)) @ (self.V_t @ inputs)
+        output = output.transpose(1, 2)
+
+        return output
+    
+    def calculate_mask(self, is_training, return_topk=False):
+        """
+        Calculates the mask for singular value selection. During training, it uses Gumbel-Sigmoid approximation.
+        During evaluation, various non-differentiable operations can be used
+
+        Args:
+            is_training (bool): Whether the model is in training mode.
+            return_probs (bool): Whether to return probabilities instead of binary mask (default: False).
+
+        Returns:
+            torch.Tensor: Mask for singular value selection.
+        """
+        logit_mask = self.E_train() + self.b
+        E_train_mask = gumbel_sigmoid(logit_mask, tau=self.tau)
+
+        if is_training:
+            pass
+        else:
+            E_train_mask = E_train_mask > 0.5
+            #compression_rate = E_train_mask.sum().item() * (self.in_features + self.out_features) / (self.in_features * self.out_features)
+            # if compression_rate > 0.97:
+            #     E_train_mask = torch.ones_like(self.E_train, dtype=torch.bool)
+
+        if return_topk: 
+            m = torch.zeros_like(E_train_mask, device=E_train_mask.device, requires_grad=False)
+            m[:E_train_mask.sum().item()] = 1.
+
+        return E_train_mask
+
+    def __str__(self):
+        return f"LowrankLinear(in_features={self.in_features}, out_features={self.out_features}, rank={self.rank})"
+
+    def __repr__(self):
+        return self.__str__()
+    
+def calculate_r_align(compression_calculator):
+    loss = 0.
+    for module in compression_calculator.lowrank_layers: 
+        with torch.no_grad():
+            k = module.calculate_mask(False).sum().item()
+            m = torch.zeros_like(module.E_train_mask, device=module.E_train_mask.device, requires_grad=False)
+            m[:k] = 1.
+
+        loss += torch.sum((module.E_train_mask * module.E - m * module.E)**2)
+        # loss += torch.sum(module.E_train_mask)
+
+    loss = loss/len(compression_calculator.lowrank_layers)
+    return loss
+
+def calculate_R_loss(compression_calculator, target_param_ratio:int):
+    total_new_params = 0. 
+    total_orignal_params = 0.
+    for module in compression_calculator.lowrank_layers: 
+        total_new_params += (module.in_features + module.out_features) * module.E_train_mask.sum()
+        total_orignal_params += (module.in_features * module.out_features)
+
+    target_params = target_param_ratio * total_orignal_params
+
+    a = total_new_params
+    # if total_new_params.item() < target_params:
+    #     a = torch.tensor(target_params)
+    
+    loss = torch.log(a/target_params)
+    return loss
+
+
+def training_step(model, batch, pad_token_id, args, compression_calculator):
+    """
+    One training step of model
+    """
+
+    # create inputs and targets
+    input_ids = batch['input_ids'][:, :-1].to(model.device)
+    attention_mask = batch['attention_mask'][:, :-1].to(model.device)
+    labels = batch['input_ids'][:, 1:].clone().to(model.device)
+    labels[labels == pad_token_id] = -100
+
+    outputs = model(input_ids=input_ids, attention_mask=attention_mask, use_cache=False)
+    logits = outputs.logits
+
+    logits_loss = F.cross_entropy(logits.view(-1, logits.size(-1)), labels.view(-1), reduction='mean', ignore_index=-100)
+
+    with torch.no_grad():
+        perplexity = torch.exp(logits_loss)
+
+    r_align_loss = calculate_r_align(compression_calculator)
+    r_loss = calculate_R_loss(compression_calculator, args.target_param_ratio)
+
+    loss = logits_loss + r_align_loss + r_loss
+
+    with torch.no_grad():
+        current_param_ratio = compression_calculator.get_compression()
+        keep_ratio = compression_calculator.get_sv_ratio()
+
+    return loss, logits_loss, r_align_loss, r_loss, perplexity, keep_ratio, current_param_ratio
+
+def eval_model(model, test_dl, pad_token_id, args, compression_calculator):
+    """
+    Perform evaluation
+    """
+    model = model.eval()
+    metrics = defaultdict(list)
+    for _, batch in enumerate(tqdm(test_dl, desc=f"Evaluating", mininterval=5)):
+        with torch.no_grad():
+            loss, logits_loss, r_align_loss, r_loss, perplexity, keep_ratio, current_param_ratio = training_step(model, batch, pad_token_id, args, compression_calculator)
+
+        metrics['loss'].append(loss.item())
+        metrics['logits_loss'].append(logits_loss.item() if isinstance(logits_loss, torch.Tensor) else logits_loss)
+        metrics['r_align_loss'].append(r_align_loss.item())
+        metrics['keep_ratio'].append(keep_ratio)
+        metrics['perplexity'].append(perplexity.item())
+        metrics['r_loss'].append(r_loss)
+        del distill_batch
+
+    for key in metrics:
+        metrics[key] = sum(metrics[key]) / len(metrics[key])
+
+    metrics = {f"eval/{key}": value for key, value in metrics.items()}
+    torch.cuda.empty_cache()
+    model = model.train()
+    return metrics
+
+
+def freeze_model_masks(model, should_freeze=True):
+    """ 
+    Freezes masks so that the model does not generate a mask in the forward pass, but uses a pre-computed mask 
+    """
+    for _, module in model.named_modules():
+        if 'Lowrank' in str(module)[:7]:
+            module.use_stored_masks = should_freeze
+
+    
