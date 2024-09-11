@@ -193,11 +193,11 @@ def calculate_R_loss(compression_calculator, target_param_ratio:int):
 
     target_params = target_param_ratio * total_orignal_params
 
-    a = total_new_params
+    a = total_new_params/total_orignal_params
     if total_new_params.item() < target_params:
-        a = torch.tensor(target_params)
+        a = torch.tensor(target_param_ratio)
     
-    loss = torch.log(a/target_params)
+    loss = torch.log(a/target_param_ratio)
     return loss
 
 
