@@ -1,0 +1,14 @@
+torch==2.3.0
+torchvision==0.18.0
+torchaudio==2.3.0
+--find-links https://download.pytorch.org/whl/cu121
+
+transformers
+datasets
+tqdm
+numpy
+pandas
+scikit-learn
+wandb
+lm-eval==0.4.2
+matplotlib
