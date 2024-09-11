@@ -201,7 +201,7 @@ def calculate_R_loss(compression_calculator, target_param_ratio:int):
     return loss
 
 
-def training_step(model, batch, pad_token_id, args, compression_calculator):
+def training_step(model, batch, pad_token_id, args, compression_calculator, is_eval=False):
     """
     One training step of model
     """
@@ -219,6 +219,10 @@ def training_step(model, batch, pad_token_id, args, compression_calculator):
 
     with torch.no_grad():
         perplexity = torch.exp(logits_loss)
+
+    if is_eval: 
+        return None, logits_loss, None, None, perplexity, None, None, None
+
 
     r_align_loss = calculate_r_align(compression_calculator)
     r_loss = calculate_R_loss(compression_calculator, args.target_param_ratio)
@@ -244,14 +248,10 @@ def eval_model(model, test_dl, pad_token_id, args, compression_calculator):
     metrics = defaultdict(list)
     for _, batch in enumerate(tqdm(test_dl, desc=f"Evaluating", mininterval=5)):
         with torch.no_grad():
-            loss, logits_loss, r_align_loss, r_loss, perplexity, keep_ratio, current_param_ratio, lambda_scale = training_step(model, batch, pad_token_id, args, compression_calculator)
+            loss, logits_loss, r_align_loss, r_loss, perplexity, keep_ratio, current_param_ratio, lambda_scale = training_step(model, batch, pad_token_id, args, compression_calculator, is_eval=True)
 
-        metrics['loss'].append(loss.item())
         metrics['logits_loss'].append(logits_loss.item() if isinstance(logits_loss, torch.Tensor) else logits_loss)
-        metrics['r_align_loss'].append(r_align_loss.item())
-        metrics['keep_ratio'].append(keep_ratio)
         metrics['perplexity'].append(perplexity.item())
-        metrics['r_loss'].append(r_loss)
 
     for key in metrics:
         metrics[key] = sum(metrics[key]) / len(metrics[key])
