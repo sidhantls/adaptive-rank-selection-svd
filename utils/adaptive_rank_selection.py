@@ -153,6 +153,7 @@ class LowrankLinear(torch.nn.Module):
         if return_topk: 
             m = torch.zeros_like(E_train_mask, device=E_train_mask.device, requires_grad=False)
             m[:E_train_mask.sum().item()] = 1.
+            return m 
 
         return E_train_mask
 
