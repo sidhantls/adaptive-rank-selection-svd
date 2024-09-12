@@ -189,6 +189,15 @@ reached_compression_steps = 0
 param_ratios = []
 is_compression_reached = False 
 
+
+# eval every steps before train
+if True:
+    model = model.eval()
+    metrics = adaptive_rank_selection.eval_model(model, test_dl, tokenizer.pad_token_id, args, compression_calculator)
+    harness_metrics = eval_utils.evaluate_with_harness(model, tokenizer, device=model.device, debug=args.debug, batch_size=args.batch_size)
+    wandb.log({**metrics, **harness_metrics, 'step': global_step})
+    model = model.train()
+
 print('Starting training..')
 for epoch in range(args.epochs):
     model = model.train()
@@ -284,9 +293,11 @@ wandb.Artifact(name="compression_metadata", type="dataset").add_file(stats_path)
    
 # evaluate the final model as well
 if args.eval_full:
-    if torch.cuda.is_available(): model = model.cuda()
+    if torch.cuda.is_available(): 
+        model = model.cuda()
+        model = model.half()
+
     model = model.eval()
-    model = model.half()
     # adaptive_rank_selection.freeze_model_masks(model, should_freeze=True)
 
     harness_metrics_full = eval_utils.evaluate_with_harness_full(model, tokenizer, device, debug=args.debug, batch_size=args.eval_batch_size)
