@@ -105,7 +105,7 @@ torch.backends.cudnn.deterministic = True  # Ensure deterministic behavior for C
 if args.debug: 
     os.environ["WANDB_MODE"] = "offline"
 
-wandb_writer = wandb.init(project="learn-to-compress-lrd2", name=args.exp_name, config=vars(args))
+wandb_writer = wandb.init(project="learn-to-compress-lrd3", name=args.exp_name, config=vars(args))
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"using device: {device}")
@@ -247,7 +247,7 @@ for epoch in range(args.epochs):
             # adaptive_rank_selection.freeze_model_masks(model, should_freeze=False)
             model = model.train()
 
-        window_size = 5 # continue training for X more steps after target is reached
+        window_size = 50 # continue training for X more steps after target is reached
         current_mean = np.mean(param_ratios[-window_size:])
 
         is_compression_reached = len(param_ratios) > window_size and (current_mean - args.target_param_ratio) < 0.0015
