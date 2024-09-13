@@ -193,9 +193,8 @@ is_compression_reached = False
 # eval every steps before train
 if True:
     model = model.eval()
-    metrics = adaptive_rank_selection.eval_model(model, test_dl, tokenizer.pad_token_id, args, compression_calculator)
     harness_metrics = eval_utils.evaluate_with_harness(model, tokenizer, device=model.device, debug=args.debug, batch_size=args.batch_size)
-    wandb.log({**metrics, **harness_metrics, 'step': global_step})
+    wandb.log({**harness_metrics, 'step': 0})
     model = model.train()
 
 print('Starting training..')
