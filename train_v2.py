@@ -74,6 +74,8 @@ parser.add_argument("--cache_dir", type=str, default='train_cache/', help='Direc
 
 parser.add_argument("--compress_loss", type=str, default='mse', help="Kind of compression loss to use", choices=['mse', 'l1'])
 
+parser.add_argument("--layer_type", type=str, default='gumbel', help='Layer type to use to perform singular value selection', choices=['gumbel', 'gumbel2', 'topk', 'topk2', 'gate', 'adaptive'])
+
 parser.add_argument("--only_compress", type=str, default='', help='Layer to compression for, comma separated')
 
 parser.add_argument('--eval_full', action='store_true', default=False, help='Run evaluation on large dataset when training is complete')
@@ -250,9 +252,8 @@ args.scale_distill = train_utils.schedule_distill_scale(global_step, max_steps, 
 args.tau = args.start_tau
 
 if not args.debug:
-    # metrics = train_utils.eval_model(model, test_dl, compression_params, tokenizer.pad_token_id, args, compression_calculator)
     harness_metrics = eval_utils.evaluate_with_harness(model, tokenizer, device=model.device, debug=args.debug, batch_size=args.batch_size)
-    wandb.log({**harness_metrics, 'step': global_step})
+    wandb.log({ **harness_metrics, 'step': global_step})
 
 scaler = torch.cuda.amp.GradScaler(enabled=use_amp)
 
