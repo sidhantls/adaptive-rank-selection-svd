@@ -302,7 +302,7 @@ if args.eval_full:
     harness_metrics_full = eval_utils.evaluate_with_harness_full(model, tokenizer, device, debug=args.debug, batch_size=args.eval_batch_size)
     harness_metrics_full = {'final_bc_' + k: v for k, v in harness_metrics_full.items()} # evaluate before converting the model, sanity check
     wandb.log({**harness_metrics_full, 'step': global_step})
-    print('Final harness results: \n', harness_metrics_full, '\n')
+    print('Pre Final harness results: \n', harness_metrics_full, '\n')
 
     model = model.float() # back to fp32, for model convertion. may not even matter
 
