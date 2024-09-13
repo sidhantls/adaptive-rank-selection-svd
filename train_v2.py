@@ -21,7 +21,6 @@ from transformers import (
 )
 
 from utils import (
-    distill_utils,
     train_utils,
     loss_aware,
     convert_model,
@@ -124,6 +123,7 @@ parser.add_argument("--seed", type=int, default=233, help="Seed used in experime
 
 args = parser.parse_args()
 
+args.tau=0.4
 os.makedirs(args.cache_dir, exist_ok=True)
 
 np.random.seed(args.seed)  # Set the seed for NumPy
@@ -177,9 +177,6 @@ print(f'Model dtype: {model.dtype}')
 if torch.cuda.is_available():
     model = model.cuda()
 
-if not args.load_distill_cache:
-    distill_utils.create_distillation_dataset_cache(model, train_dl, device=device, distill_mode=args.distill_mode, cache_dir=args.cache_dir, is_train=True)
-    distill_utils.create_distillation_dataset_cache(model, test_dl, device=device, distill_mode=args.distill_mode, cache_dir=args.cache_dir, is_train=False)
 train_utils.print_nvidia_smi()
 
 print(f'\nModel pushed to {device} after distillation', model.device)
@@ -248,12 +245,13 @@ global_step, max_steps = 0, args.epochs * len(train_dl)
 eval_interval = args.epochs // args.eval_freq
 
 # evaluating before first epoch 
-args.scale_distill = train_utils.schedule_distill_scale(global_step, max_steps, args.schedule_distillation, args.scale_distill)
+args.scale_distill = None
 args.tau = args.start_tau
 
 if not args.debug:
     harness_metrics = eval_utils.evaluate_with_harness(model, tokenizer, device=model.device, debug=args.debug, batch_size=args.batch_size)
     wandb.log({ **harness_metrics, 'step': global_step})
+    print('first eval\n', harness_metrics)
 
 scaler = torch.cuda.amp.GradScaler(enabled=use_amp)
 
