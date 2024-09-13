@@ -30,7 +30,6 @@ from utils import (
 from utils.data_utils import get_dataloaders
 
 import numpy as np
-from utils import adaptive_rank_selection
 
 parser = argparse.ArgumentParser(description="Transformer model training and evaluation")
 
@@ -51,6 +50,8 @@ parser.add_argument("--num_test_samples", type=int, default=256,
 
 parser.add_argument("--max_length", type=int, default=512, help="Maximum number of input tokens")
 
+parser.add_argument("--epochs", type=int, default=5, help="The number of epochs")
+
 parser.add_argument("--lr", type=float, default=1e-5,
                     help="Learning rate")
 
@@ -64,29 +65,61 @@ parser.add_argument('--debug', action='store_true', default=False, help='Debug m
 
 parser.add_argument("--exp_name", type=str, default='test', help="Experiment name")
 
+parser.add_argument("--distill_mode", type=str, default='', help="Distillation approach. Empty string implies no distillation", choices=["keys_values", "hs", "logits", "", "hs_last"])
+
+parser.add_argument("--scale_distill", type=float, default=1., help="Value to scale the distillation loss by")
+
 parser.add_argument("--cache_dir", type=str, default='train_cache/', help='Directory where distillation cache is stored')
 
+parser.add_argument("--compress_loss", type=str, default='mse', help="Kind of compression loss to use", choices=['mse', 'l1'])
+
+parser.add_argument("--layer_type", type=str, default='gumbel', help='Layer type to use to perform singular value selection', choices=['gumbel', 'gumbel2', 'topk', 'topk2', 'gate', 'adaptive'])
+
+parser.add_argument("--only_compress", type=str, default='', help='Layer to compression for, comma separated')
+
 parser.add_argument('--eval_full', action='store_true', default=False, help='Run evaluation on large dataset when training is complete')
+
+parser.add_argument("--init_frac", type=float, default=1.0, help="Starting fraction of singular values to keep. Usued with gumbel sigmoid")
+
+parser.add_argument("--schedule_distillation", type=str, default='', help='Scale distillation loss', choices=['', '1', '2', '3'])
 
 parser.add_argument("--act_aware", type=str, default='', help='Loss/activation aware SVD', choices=['', 'fisher', 'activation'])
 
 parser.add_argument("--alpha", type=float, default=1., help="Alpha hyperparameter for act_aware")
 
-parser.add_argument("--target_param_ratio", type=float, help="Target compression", required=True)
+parser.add_argument('--scale_singular_values', action='store_true', default=False, help='If true, scales singular values by a learnable matrix')
+
+parser.add_argument("--target_param_ratio", type=float, default=-1, help="If compression value is less than this, compression loss is scaled to 0")
+
+parser.add_argument('--ignore_first_layer', action='store_true', default=False, help='Do not perform compression on first layer')
+
+parser.add_argument('--fix_length', action='store_true', default=False, help='Keep a fixed sequence length')
 
 parser.add_argument('--save_model', type=str, default='reconstruct',  help='Method to save model', choices=['reconstruct', 'use_mask'])
 
 parser.add_argument('--load_act_cache', action='store_true', default=False, help='Loads activation cache')
 
+parser.add_argument('--load_distill_cache', action='store_true', default=False, help='Loads distillation cache')
+
 parser.add_argument('--load_act_path', type=str, default="", help='Loads activation cache from a particular directory')
 
+parser.add_argument( "--lr_schedule", type=str, default="", choices=["", "plateau"], help="Type of learning rate scheduler to use.")
+
+parser.add_argument( "--start_tau", type=float, default=0.1, help="Start tau")
+
+parser.add_argument( "--end_tau", type=float, default=None, help="Decay tau to a target of end_tau. Negative value indicates its off")
+
+parser.add_argument( "--bias_init", action='store_true', default=False, help="Bias the initialization of the mask to be in decreasing order")
+
+parser.add_argument( "--tv_loss", action='store_true', default=False, help="Add Total Variation loss to force smoothness in mask")
+
+parser.add_argument( "--mask_eval_type", type=str, default="", help="Methods to perform evaluation with masking layer", choices=["", "threshold", "topk"])
+
+parser.add_argument( "--fix_compress_ratio", type=float, default=None, help="Fixed compression ratio")
+
+parser.add_argument( "--use_logits_loss", action='store_true', default=False, help="If this is true, it starts at acompression rate = 1. Currently, starting compression is more than one since we use full rank")
+
 parser.add_argument("--seed", type=int, default=233, help="Seed used in experiment")
-
-parser.add_argument("--tau", type=float, default=0.4, help="Tau for gumbel sigmoid")
-
-parser.add_argument("--lambda_scale", type=float, default=16., help="Scale factor for compression regularization loss")
-
-parser.add_argument("--gamma_scale", type=float, default=10., help="Scale factor of alignment loss")
 
 args = parser.parse_args()
 
@@ -163,6 +196,7 @@ if args.act_aware:
         raise NotImplementedError(f'Activation aware {args.act_aware} not supported')
 
 # add low-rank decomposed layers and set grads 
+
 model = model.cpu(); torch.cuda.empty_cache() # move to cpu for layer editing
 lowrank_modeling.replace_with_lowrank_linear(model, args, svd_info)
 train_utils.configure_required_grad(model)
@@ -180,6 +214,31 @@ train_utils.print_nvidia_smi()
 compression_params = lowrank_modeling.get_compression_layers(model)
 
 optimizer = AdamW(model.parameters(), lr=args.lr)
+
+args.fix_compress_ratio=None 
+
+if args.fix_compress_ratio or args.compress_loss == 'mse': 
+    with torch.no_grad():
+        args.target_keep_ratio = compression_calculator.get_sv_ratio()
+else:
+    args.target_keep_ratio = None
+
+lr_scheduler = None 
+if args.lr_schedule and args.lr_schedule != 'plateau': 
+    if args.lr_schedule == 'linear':
+        lr_scheduler = optim.lr_scheduler.LinearLR(optimizer, start_factor=1.0, end_factor=0.5, total_iters=args.epochs * len(train_dl))
+
+    elif args.lr_schedule == 'cycle': 
+        lr_scheduler = optim.lr_scheduler.CyclicLR(
+        optimizer,
+        base_lr=1e-3,
+        max_lr=1e-2,
+        step_size_up=args.epochs * len(train_dl) // 5,  # Number of steps to go from base_lr to max_lr
+        mode='triangular',
+        cycle_momentum=False
+    )
+    else:
+        raise NotImplementedError('Unsupported Scheduler')
         
 # Training loop
 global_step, max_steps = 0, args.epochs * len(train_dl)
@@ -187,6 +246,7 @@ eval_interval = args.epochs // args.eval_freq
 
 # evaluating before first epoch 
 args.scale_distill = None
+args.tau = args.start_tau
 
 if not args.debug:
     harness_metrics = eval_utils.evaluate_with_harness(model, tokenizer, device=model.device, debug=args.debug, batch_size=args.batch_size)
