@@ -17,7 +17,8 @@ from transformers import (
     AutoModel,
     AutoModelForCausalLM,
     AutoTokenizer,
-    LlamaTokenizerFast
+    LlamaTokenizerFast,
+    GemmaTokenizerFast
 )
 
 from utils import (
@@ -69,8 +70,6 @@ parser.add_argument("--cache_dir", type=str, default='train_cache/', help='Direc
 
 parser.add_argument('--eval_full', action='store_true', default=False, help='Run evaluation on large dataset when training is complete')
 
-parser.add_argument("--init_frac", type=float, default=1.0, help="Starting fraction of singular values to keep. Usued with gumbel sigmoid")
-
 parser.add_argument("--act_aware", type=str, default='', help='Loss/activation aware SVD', choices=['', 'fisher', 'activation'])
 
 parser.add_argument("--alpha", type=float, default=1., help="Alpha hyperparameter for act_aware")
@@ -85,23 +84,12 @@ parser.add_argument('--load_act_cache', action='store_true', default=False, help
 
 parser.add_argument('--load_act_path', type=str, default="", help='Loads activation cache from a particular directory')
 
-parser.add_argument( "--lr_schedule", type=str, default="", choices=["", "plateau"], help="Type of learning rate scheduler to use.")
-
-parser.add_argument( "--use_logits_loss", action='store_true', default=False, help="If this is true, it starts at acompression rate = 1. Currently, starting compression is more than one since we use full rank")
-
 parser.add_argument("--seed", type=int, default=233, help="Seed used in experiment")
 
 args = parser.parse_args()
 
 args.tau=0.4
-args.fix_compress_ratio = None
-args.mask_eval_type = None 
-args.ignore_first_layer = None 
-args.scale_singular_values = None 
-args.schedule_distillation = "" 
-args.only_compress = "" 
 args.layer_type = 'adaptive'
-args.compress_loss = None 
 args.distill_mode = None 
 
 os.makedirs(args.cache_dir, exist_ok=True)
@@ -194,31 +182,6 @@ train_utils.print_nvidia_smi()
 compression_params = lowrank_modeling.get_compression_layers(model)
 
 optimizer = AdamW(model.parameters(), lr=args.lr)
-
-args.fix_compress_ratio=None 
-
-if args.fix_compress_ratio or args.compress_loss == 'mse': 
-    with torch.no_grad():
-        args.target_keep_ratio = compression_calculator.get_sv_ratio()
-else:
-    args.target_keep_ratio = None
-
-lr_scheduler = None 
-if args.lr_schedule and args.lr_schedule != 'plateau': 
-    if args.lr_schedule == 'linear':
-        lr_scheduler = optim.lr_scheduler.LinearLR(optimizer, start_factor=1.0, end_factor=0.5, total_iters=args.epochs * len(train_dl))
-
-    elif args.lr_schedule == 'cycle': 
-        lr_scheduler = optim.lr_scheduler.CyclicLR(
-        optimizer,
-        base_lr=1e-3,
-        max_lr=1e-2,
-        step_size_up=args.epochs * len(train_dl) // 5,  # Number of steps to go from base_lr to max_lr
-        mode='triangular',
-        cycle_momentum=False
-    )
-    else:
-        raise NotImplementedError('Unsupported Scheduler')
         
 # Training loop
 global_step, max_steps = 0, args.epochs * len(train_dl)
@@ -246,14 +209,6 @@ for epoch in range(args.epochs):
     num_batches = 0
 
     for batch_idx, batch in enumerate(tqdm(train_dl, desc=f"Train Epoch {epoch+1}", mininterval=5)):
-        args.scale_distill = train_utils.schedule_distill_scale(global_step, max_steps, args.schedule_distillation, args.scale_distill)
-
-        if args.distill_mode:
-            distill_data_path = os.path.join(args.cache_dir, f"distill_cache/train_{batch_idx}.pt")
-            distill_batch = torch.load(distill_data_path)
-        else:
-            distill_batch = {}
-
         with torch.autocast(device_type=model.device.type, dtype=train_precision, enabled=use_amp):
             loss, logits_loss, distill_loss, distill_kl, hs_loss, compression_loss, perplexity, keep_ratio, tv_loss, compression_ratio = train_utils.training_step(
                 model, batch, batch_idx, compression_params, 
@@ -267,9 +222,6 @@ for epoch in range(args.epochs):
         scaler.step(optimizer)
         scaler.update()
         optimizer.zero_grad(set_to_none=True)
-
-        if args.lr_schedule and 'plateau' not in args.lr_schedule:
-            lr_scheduler.step()
 
         # Combining all metrics into one dictionary and logging with wandb in one line
         metrics = {
@@ -312,14 +264,6 @@ for epoch in range(args.epochs):
         current_mean = np.mean(param_ratios[-window_size:])
         short_mean = np.mean(param_ratios[-30:])
         
-        # saturate learning rate 
-        if args.lr_schedule == 'plateau' and len(param_ratios) > 30 and (short_mean-args.target_param_ratio) < 0.005:
-            for param_group in optimizer.param_groups:
-                param_group['lr'] = args.lr/2
-            args.lr_schedule = 'plateau_saturated' # update string so learning rate is not edited again
-
-            print('Compression level reached, saturating learning rate')
-
         is_compression_reached = len(param_ratios) > window_size and (current_mean - args.target_param_ratio) < 0.0015
  
         # if pre-training mode, early stop after 5% more steps if performance is constant
