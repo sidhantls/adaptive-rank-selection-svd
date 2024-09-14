@@ -93,7 +93,7 @@ def get_dataloaders(
     print(f'Time taken to load datasets {time.time()-start: 0.2f}')
 
     # use pre-training dataset style with packing
-    train_docs, test_docs = sample_documents_from_dataset_packing(hf_dataset['text'], args), args)
+    train_docs, test_docs = sample_documents_from_dataset_packing(hf_dataset['text'], args)
 
     if args.debug: 
         args.max_length = 10
