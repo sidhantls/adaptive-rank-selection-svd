@@ -148,9 +148,6 @@ class LowrankLinear(torch.nn.Module):
             #compression_rate = E_train_mask.sum().item() * (self.in_features + self.out_features) / (self.in_features * self.out_features)
             # if compression_rate > 0.97:
             #     E_train_mask = torch.ones_like(self.E_train, dtype=torch.bool)
-
-        # during model convertion, we should use topk
-        if return_topk: 
             m = torch.zeros_like(E_train_mask, device=E_train_mask.device, requires_grad=False)
             m[:E_train_mask.sum().item()] = 1.
             return m 
