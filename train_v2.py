@@ -95,7 +95,6 @@ args = parser.parse_args()
 
 args.tau=0.4
 args.layer_type = 'adaptive'
-args.distill_mode = None 
 
 os.makedirs(args.cache_dir, exist_ok=True)
 
@@ -186,15 +185,13 @@ train_utils.print_nvidia_smi()
 # singular value selection parameters, required for loss
 compression_params = lowrank_modeling.get_compression_layers(model)
 
-optimizer = AdamW(model.parameters(), lr=args.lr)
+optimizer = Adam(model.parameters(), lr=args.lr)
         
 # Training loop
 global_step, max_steps = 0, args.epochs * len(train_dl)
 eval_interval = args.epochs // args.eval_freq
 
 # evaluating before first epoch 
-args.scale_distill = None
-
 if not args.debug:
     harness_metrics = eval_utils.evaluate_with_harness(model, tokenizer, device=model.device, debug=args.debug, batch_size=args.batch_size)
     wandb.log({ **harness_metrics, 'step': global_step})
