@@ -26,7 +26,8 @@ from utils import (
     loss_aware,
     convert_model,
     eval_utils,
-    lowrank_modeling
+    lowrank_modeling,
+    adaptive_rank_selection
 )
 from utils.data_utils import get_dataloaders
 
@@ -74,7 +75,7 @@ parser.add_argument("--act_aware", type=str, default='', help='Loss/activation a
 
 parser.add_argument("--alpha", type=float, default=1., help="Alpha hyperparameter for act_aware")
 
-parser.add_argument("--target_param_ratio", type=float, default=-1, help="If compression value is less than this, compression loss is scaled to 0")
+parser.add_argument("--target_param_ratio", type=float, default=0.90, help="If compression value is less than this, compression loss is scaled to 0")
 
 parser.add_argument('--fix_length', action='store_true', default=False, help='Keep a fixed sequence length')
 
@@ -85,6 +86,10 @@ parser.add_argument('--load_act_cache', action='store_true', default=False, help
 parser.add_argument('--load_act_path', type=str, default="", help='Loads activation cache from a particular directory')
 
 parser.add_argument("--seed", type=int, default=233, help="Seed used in experiment")
+
+parser.add_argument("--lambda_scale", type=float, default=16., help="Scale factor for compression regularization loss")
+
+parser.add_argument("--gamma_scale", type=float, default=10., help="Scale factor of alignment loss")
 
 args = parser.parse_args()
 
@@ -209,15 +214,16 @@ for epoch in range(args.epochs):
     num_batches = 0
 
     for batch_idx, batch in enumerate(tqdm(train_dl, desc=f"Train Epoch {epoch+1}", mininterval=5)):
+        # if args.distill_mode:
+        #     distill_data_path = os.path.join(args.cache_dir, f"distill_cache/train_{batch_idx}.pt")
+        #     distill_batch = torch.load(distill_data_path)
+        # else:
+        #     distill_batch = {}
+
         with torch.autocast(device_type=model.device.type, dtype=train_precision, enabled=use_amp):
-            loss, logits_loss, distill_loss, distill_kl, hs_loss, compression_loss, perplexity, keep_ratio, tv_loss, compression_ratio = train_utils.training_step(
-                model, batch, batch_idx, compression_params, 
-                tokenizer.pad_token_id, distill_batch, args, compression_calculator)
+            loss, logits_loss, r_align_loss, r_loss, perplexity, keep_ratio, current_param_ratio, lambda_scale = adaptive_rank_selection.training_step(model, batch, tokenizer.pad_token_id, args, compression_calculator)
 
         scaler.scale(loss).backward()
-        
-        #scaler.unscale_(optimizer) # gradient clipping on unscaled gradients
-        #clip_grad_norm_(model.parameters(), max_norm=1.0)
 
         scaler.step(optimizer)
         scaler.update()
@@ -227,21 +233,18 @@ for epoch in range(args.epochs):
         metrics = {
             "train/loss": loss.item(),
             "train/logits_loss": logits_loss,
-            "train/compression_loss": compression_loss.item(),
-            "train/distill_loss": distill_loss,
-            "train/distill_logits_loss": distill_kl, 
-            "train/distill_loss_hs": hs_loss,
-            "train/target_keep_ratio": args.target_keep_ratio,
+            "train/r_align_loss": r_align_loss.item(),
             "train/sv_keep_ratio": keep_ratio,
             "train/perplexity": perplexity.item(), 
-            "train/scale_distill": args.scale_distill, 
+            "train/r_loss": r_loss, 
             "train/lr": optimizer.param_groups[0]['lr'],
-            "train/tv_loss": tv_loss,
-            "train/compression_ratio": compression_ratio,
+            "train/target_param_ratio": args.target_param_ratio,
+            "train/compression_ratio": current_param_ratio,
+            "train/lambda_scale": lambda_scale,
             "step": global_step
         }
         
-        param_ratios.append(compression_ratio)
+        param_ratios.append(current_param_ratio)
 
         if batch_idx % 2 == 0:
             wandb.log(metrics)
@@ -250,50 +253,43 @@ for epoch in range(args.epochs):
         epoch_loss += loss.item()
         num_batches += 1
         
-        del distill_batch
-
         # eval every steps: for pre-training objective
         if batch_idx and args.eval_freq_steps and (batch_idx % args.eval_freq_steps) == 0:
             model = model.eval()
-            metrics = train_utils.eval_model(model, test_dl, compression_params, tokenizer.pad_token_id, args, compression_calculator)
-            harness_metrics = eval_utils.evaluate_with_harness(model, tokenizer, device=model.device, debug=args.debug, batch_size=args.batch_size)
-            model = model.train()
-            wandb.log({**metrics, **harness_metrics, 'step': global_step})
+            # adaptive_rank_selection.freeze_model_masks(model, should_freeze=True)
 
-        window_size=250 # continue training for 500 more steps after target is reached
-        current_mean = np.mean(param_ratios[-window_size:])
-        short_mean = np.mean(param_ratios[-30:])
+            metrics = adaptive_rank_selection.eval_model(model, test_dl, tokenizer.pad_token_id, args, compression_calculator)
+            harness_metrics = eval_utils.evaluate_with_harness(model, tokenizer, device=model.device, debug=args.debug, batch_size=args.batch_size)
         
+            wandb.log({**metrics, **harness_metrics, 'step': global_step})
+            # adaptive_rank_selection.freeze_model_masks(model, should_freeze=False)
+            model = model.train()
+
+        window_size = 50 # continue training for X more steps after target is reached
+        current_mean = np.mean(param_ratios[-window_size:])
+
         is_compression_reached = len(param_ratios) > window_size and (current_mean - args.target_param_ratio) < 0.0015
  
         # if pre-training mode, early stop after 5% more steps if performance is constant
         if is_compression_reached: 
-            print(f'\n\nCompression Ratio: {current_mean} reached for 500 steps, early stopping training...\n\n')
+            print(f'\nCompression Ratio: {current_mean} reached for {window_size} steps, early stopping training...\n')
             break
-    
+
     if is_compression_reached:
         break 
-
-    if args.end_tau is not None and args.end_tau != args.start_tau: 
-        old_tau = args.tau
-        args.tau = lowrank_modeling.update_lowrank_tau(model, args.epochs, args.end_tau, start_tau=args.start_tau)
-        print('Updated tau from {old_tau} to {args.tau}')
     
-    if epoch and (epoch % args.eval_freq) == 0:
-        model = model.eval()
-        metrics = train_utils.eval_model(model, test_dl, compression_params, tokenizer.pad_token_id, args, compression_calculator)
-        harness_metrics = eval_utils.evaluate_with_harness(model, tokenizer, device=model.device, debug=args.debug, batch_size=args.batch_size)
-        model = model.train()
-    
-        wandb.log({**metrics, **harness_metrics, 'train/tau': args.tau, 'step': global_step})
-
     epoch_loss = epoch_loss/num_batches
     wandb.log({'train/epoch_loss': epoch_loss, 'step': epoch})
 
-if not args.debug and not (epoch % args.eval_freq == 0) or is_compression_reached: # if is_compression_reached=True, then training was terminated
-    metrics = train_utils.eval_model(model, test_dl, compression_params, tokenizer.pad_token_id, args, compression_calculator)
-    harness_metrics = eval_utils.evaluate_with_harness(model, tokenizer, device=model.device, debug=False, batch_size=args.batch_size)
-    wandb.log({**metrics, **harness_metrics, 'step': global_step})
+# if not args.debug and not (epoch % args.eval_freq == 0) or is_compression_reached: # if is_compression_reached=True, then training was terminated
+#     model = model.eval(); adaptive_rank_selection.freeze_model_masks(model, should_freeze=True)
+
+#     metrics = adaptive_rank_selection.eval_model(model, test_dl, tokenizer.pad_token_id, args, compression_calculator)
+#     harness_metrics = eval_utils.evaluate_with_harness(model, tokenizer, device=model.device, debug=args.debug, batch_size=args.batch_size)
+
+#     wandb.log({**metrics, **harness_metrics, 'step': global_step})
+#     adaptive_rank_selection.freeze_model_masks(model, should_freeze=False)
+#     model = model.train()
 
 print('Training complete.')
 
@@ -304,6 +300,22 @@ with open(stats_path, 'w') as f:
     json.dump(compression_metadata, f)
 wandb.Artifact(name="compression_metadata", type="dataset").add_file(stats_path)
    
+# evaluate the final model as well
+if args.eval_full:
+    if torch.cuda.is_available(): 
+        model = model.cuda()
+        model = model.half()
+
+    model = model.eval()
+    # adaptive_rank_selection.freeze_model_masks(model, should_freeze=True)
+
+    harness_metrics_full = eval_utils.evaluate_with_harness_full(model, tokenizer, device, debug=args.debug, batch_size=args.eval_batch_size)
+    harness_metrics_full = {'final_bc_' + k: v for k, v in harness_metrics_full.items()} # evaluate before converting the model, sanity check
+    wandb.log({**harness_metrics_full, 'step': global_step})
+    print('Pre Final harness results: \n', harness_metrics_full, '\n')
+
+    model = model.float() # back to fp32, for model convertion. may not even matter
+
 if args.save_model:
     model = model.cpu()
     model_path = os.path.join(args.cache_dir, f'{wandb.run.id}_saved_model')
@@ -315,13 +327,7 @@ if args.save_model:
         json.dump(compression_map, f)
     wandb.Artifact(name="compression_map", type="dataset").add_file(os.path.join(model_path, 'compression_map.json'))
     
-    if args.save_model == 'reconstruct': 
-        model, lowrank_config = convert_model.replace_with_compressed_layer(model)
-    elif args.save_model == 'use_mask': 
-        del optimizer; del model; del compression_params; torch.cuda.empty_cache()
-        model, lowrank_config = convert_model.replace_with_compressed_layer_13b(args, svd_info, compression_map_mask)   
-    else:
-        raise NotImplementedError('arg.save_model {args.save_model} not recognised')     
+    model, lowrank_config = convert_model.replace_with_compressed_layer(model)
 
     num_params_new = train_utils.count_parameters(model)
     compression_stats = { "compression_stats/new_params_billion": num_params_new, "compression_stats/old_params_billion": num_params_old, "compression_stats/compression_ratio": num_params_new / num_params_old }
@@ -338,7 +344,10 @@ if args.save_model:
 
 # evaluate the final model as well
 if args.eval_full:
-    model = model.to('cuda' if torch.cuda.is_available() else 'cpu')
+    if torch.cuda.is_available(): model = model.cuda()
+    model = model.eval(); 
+    # adaptive_rank_selection.freeze_model_masks(model, should_freeze=True)
+
     harness_metrics_full = eval_utils.evaluate_with_harness_full(model, tokenizer, device, debug=args.debug, batch_size=args.eval_batch_size)
     harness_metrics_full = {'final_' + k: v for k, v in harness_metrics_full.items()}
     wandb.log({**harness_metrics_full, 'step': global_step})
