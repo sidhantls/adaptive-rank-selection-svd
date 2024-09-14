@@ -92,14 +92,9 @@ def get_dataloaders(
         raise NotImplementedError('dataset_name not in available list in get_train_dl')
     print(f'Time taken to load datasets {time.time()-start: 0.2f}')
 
-    if not args.distill_mode: 
-        # use pre-training dataset style with packing
-        train_docs, test_docs = sample_documents_from_dataset_packing(hf_dataset['text'], args)
-    else:
-        train_docs, test_docs = sample_documents_from_dataset_samedoc(hf_dataset['text'],
-                                                            args
-                                                            )
-    
+    # use pre-training dataset style with packing
+    train_docs, test_docs = sample_documents_from_dataset_packing(hf_dataset['text'], args), args)
+
     if args.debug: 
         args.max_length = 10
         train_docs, test_docs = train_docs[:10], test_docs[:10]
