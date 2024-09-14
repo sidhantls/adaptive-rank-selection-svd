@@ -65,33 +65,17 @@ parser.add_argument('--debug', action='store_true', default=False, help='Debug m
 
 parser.add_argument("--exp_name", type=str, default='test', help="Experiment name")
 
-parser.add_argument("--distill_mode", type=str, default='', help="Distillation approach. Empty string implies no distillation", choices=["keys_values", "hs", "logits", "", "hs_last"])
-
-parser.add_argument("--scale_distill", type=float, default=1., help="Value to scale the distillation loss by")
-
 parser.add_argument("--cache_dir", type=str, default='train_cache/', help='Directory where distillation cache is stored')
-
-parser.add_argument("--compress_loss", type=str, default='mse', help="Kind of compression loss to use", choices=['mse', 'l1'])
-
-parser.add_argument("--layer_type", type=str, default='gumbel', help='Layer type to use to perform singular value selection', choices=['gumbel', 'gumbel2', 'topk', 'topk2', 'gate', 'adaptive'])
-
-parser.add_argument("--only_compress", type=str, default='', help='Layer to compression for, comma separated')
 
 parser.add_argument('--eval_full', action='store_true', default=False, help='Run evaluation on large dataset when training is complete')
 
 parser.add_argument("--init_frac", type=float, default=1.0, help="Starting fraction of singular values to keep. Usued with gumbel sigmoid")
 
-parser.add_argument("--schedule_distillation", type=str, default='', help='Scale distillation loss', choices=['', '1', '2', '3'])
-
 parser.add_argument("--act_aware", type=str, default='', help='Loss/activation aware SVD', choices=['', 'fisher', 'activation'])
 
 parser.add_argument("--alpha", type=float, default=1., help="Alpha hyperparameter for act_aware")
 
-parser.add_argument('--scale_singular_values', action='store_true', default=False, help='If true, scales singular values by a learnable matrix')
-
 parser.add_argument("--target_param_ratio", type=float, default=-1, help="If compression value is less than this, compression loss is scaled to 0")
-
-parser.add_argument('--ignore_first_layer', action='store_true', default=False, help='Do not perform compression on first layer')
 
 parser.add_argument('--fix_length', action='store_true', default=False, help='Keep a fixed sequence length')
 
@@ -99,21 +83,9 @@ parser.add_argument('--save_model', type=str, default='reconstruct',  help='Meth
 
 parser.add_argument('--load_act_cache', action='store_true', default=False, help='Loads activation cache')
 
-parser.add_argument('--load_distill_cache', action='store_true', default=False, help='Loads distillation cache')
-
 parser.add_argument('--load_act_path', type=str, default="", help='Loads activation cache from a particular directory')
 
 parser.add_argument( "--lr_schedule", type=str, default="", choices=["", "plateau"], help="Type of learning rate scheduler to use.")
-
-parser.add_argument( "--end_tau", type=float, default=None, help="Decay tau to a target of end_tau. Negative value indicates its off")
-
-parser.add_argument( "--bias_init", action='store_true', default=False, help="Bias the initialization of the mask to be in decreasing order")
-
-parser.add_argument( "--tv_loss", action='store_true', default=False, help="Add Total Variation loss to force smoothness in mask")
-
-parser.add_argument( "--mask_eval_type", type=str, default="", help="Methods to perform evaluation with masking layer", choices=["", "threshold", "topk"])
-
-parser.add_argument( "--fix_compress_ratio", type=float, default=None, help="Fixed compression ratio")
 
 parser.add_argument( "--use_logits_loss", action='store_true', default=False, help="If this is true, it starts at acompression rate = 1. Currently, starting compression is more than one since we use full rank")
 
@@ -122,6 +94,16 @@ parser.add_argument("--seed", type=int, default=233, help="Seed used in experime
 args = parser.parse_args()
 
 args.tau=0.4
+args.fix_compress_ratio = None
+args.mask_eval_type = None 
+args.ignore_first_layer = None 
+args.scale_singular_values = None 
+args.schedule_distillation = "" 
+args.only_compress = "" 
+args.layer_type = 'adaptive'
+args.compress_loss = None 
+args.distill_mode = None 
+
 os.makedirs(args.cache_dir, exist_ok=True)
 
 np.random.seed(args.seed)  # Set the seed for NumPy
