@@ -52,8 +52,6 @@ parser.add_argument("--num_test_samples", type=int, default=256,
 
 parser.add_argument("--max_length", type=int, default=512, help="Maximum number of input tokens")
 
-parser.add_argument("--epochs", type=int, default=5, help="The number of epochs")
-
 parser.add_argument("--lr", type=float, default=1e-5,
                     help="Learning rate")
 
@@ -96,6 +94,7 @@ parser.add_argument("--tau", type=float, default=0.4, help="Temperature for gumb
 args = parser.parse_args()
 
 args.layer_type = 'adaptive'
+args.epochs=1 
 
 os.makedirs(args.cache_dir, exist_ok=True)
 
