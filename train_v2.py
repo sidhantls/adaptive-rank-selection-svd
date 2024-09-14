@@ -105,8 +105,6 @@ parser.add_argument('--load_act_path', type=str, default="", help='Loads activat
 
 parser.add_argument( "--lr_schedule", type=str, default="", choices=["", "plateau"], help="Type of learning rate scheduler to use.")
 
-parser.add_argument( "--start_tau", type=float, default=0.1, help="Start tau")
-
 parser.add_argument( "--end_tau", type=float, default=None, help="Decay tau to a target of end_tau. Negative value indicates its off")
 
 parser.add_argument( "--bias_init", action='store_true', default=False, help="Bias the initialization of the mask to be in decreasing order")
@@ -246,7 +244,6 @@ eval_interval = args.epochs // args.eval_freq
 
 # evaluating before first epoch 
 args.scale_distill = None
-args.tau = args.start_tau
 
 if not args.debug:
     harness_metrics = eval_utils.evaluate_with_harness(model, tokenizer, device=model.device, debug=args.debug, batch_size=args.batch_size)
