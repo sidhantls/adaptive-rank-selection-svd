@@ -92,7 +92,6 @@ args = parser.parse_args()
 
 # constant
 args.layer_type='adaptive'
-args.distill_mode = None
 args.epochs=1
 
 os.makedirs(args.cache_dir, exist_ok=True)
@@ -191,7 +190,7 @@ is_compression_reached = False
 
 
 # eval every steps before train
-if True:
+if not args.debug:
     model = model.eval()
     harness_metrics = eval_utils.evaluate_with_harness(model, tokenizer, device=model.device, debug=args.debug, batch_size=args.batch_size)
     wandb.log({**harness_metrics, 'step': 0})
@@ -204,11 +203,6 @@ for epoch in range(args.epochs):
     num_batches = 0
 
     for batch_idx, batch in enumerate(tqdm(train_dl, desc=f"Train Epoch {epoch+1}", mininterval=5)):
-        # if args.distill_mode:
-        #     distill_data_path = os.path.join(args.cache_dir, f"distill_cache/train_{batch_idx}.pt")
-        #     distill_batch = torch.load(distill_data_path)
-        # else:
-        #     distill_batch = {}
 
         with torch.autocast(device_type=model.device.type, dtype=train_precision, enabled=use_amp):
             loss, logits_loss, r_align_loss, r_loss, perplexity, keep_ratio, current_param_ratio, lambda_scale = adaptive_rank_selection.training_step(model, batch, tokenizer.pad_token_id, args, compression_calculator)
@@ -270,16 +264,6 @@ for epoch in range(args.epochs):
     
     epoch_loss = epoch_loss/num_batches
     wandb.log({'train/epoch_loss': epoch_loss, 'step': epoch})
-
-# if not args.debug and not (epoch % args.eval_freq == 0) or is_compression_reached: # if is_compression_reached=True, then training was terminated
-#     model = model.eval(); adaptive_rank_selection.freeze_model_masks(model, should_freeze=True)
-
-#     metrics = adaptive_rank_selection.eval_model(model, test_dl, tokenizer.pad_token_id, args, compression_calculator)
-#     harness_metrics = eval_utils.evaluate_with_harness(model, tokenizer, device=model.device, debug=args.debug, batch_size=args.batch_size)
-
-#     wandb.log({**metrics, **harness_metrics, 'step': global_step})
-#     adaptive_rank_selection.freeze_model_masks(model, should_freeze=False)
-#     model = model.train()
 
 print('Training complete.')
 
