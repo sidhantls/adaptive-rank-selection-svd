@@ -33,6 +33,6 @@ LTYPE=adaptive
 GAMMA=0.001
 LAMBDA=2.
 
-python train_adaptive.py --target_param_ratio=0.90 --eval_full --batch_size=$BATCH_SIZE --lr=$LR --num_train_samples=$NUM_TRAIN_SAMPLES --exp_name=$EXP_NAME --max_length=$MAX_LEN --cache_dir=cache_dir --load_act_cache --eval_freq_steps=500 --eval_batch_size=4 --alpha=0.5 --lambda=$LAMBDA --gamma=$GAMMA
+python train_adaptive.py --model=$MODEL --target_param_ratio=0.90 --eval_full --batch_size=$BATCH_SIZE --lr=$LR --num_train_samples=$NUM_TRAIN_SAMPLES --exp_name=$EXP_NAME --max_length=$MAX_LEN --cache_dir=cache_dir --load_act_cache --eval_freq_steps=500 --eval_batch_size=4 --alpha=0.5 --lambda=$LAMBDA --gamma=$GAMMA
 
 ```
