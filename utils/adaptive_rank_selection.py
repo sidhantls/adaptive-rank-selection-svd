@@ -222,7 +222,7 @@ def training_step(model, batch, pad_token_id, args, compression_calculator, is_e
 
 
     r_align_loss = calculate_r_align(compression_calculator)
-    r_loss = calculate_R_loss(compression_calculator, args.target_param_ratio)
+    r_loss = calculate_R_loss(compression_calculator, args.p_param)
 
     with torch.no_grad():
         current_param_ratio = compression_calculator.get_compression()
