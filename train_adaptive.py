@@ -88,6 +88,8 @@ parser.add_argument("--lambda_scale", type=float, default=16., help="Scale facto
 
 parser.add_argument("--gamma_scale", type=float, default=10., help="Scale factor of alignment loss")
 
+parser.add_argument("--p_param", type=float, default=0.4, help="Param for compression loss")
+
 args = parser.parse_args()
 
 # constant
