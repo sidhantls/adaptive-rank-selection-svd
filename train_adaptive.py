@@ -280,17 +280,15 @@ wandb.Artifact(name="compression_metadata", type="dataset").add_file(stats_path)
 if args.eval_full:
     if torch.cuda.is_available(): 
         model = model.cuda()
-        model = model.half()
+        #model = model.half()
 
     model = model.eval()
-    # adaptive_rank_selection.freeze_model_masks(model, should_freeze=True)
-
+    
     harness_metrics_full = eval_utils.evaluate_with_harness_full(model, tokenizer, device, debug=args.debug, batch_size=args.eval_batch_size)
     harness_metrics_full = {'final_bc_' + k: v for k, v in harness_metrics_full.items()} # evaluate before converting the model, sanity check
     wandb.log({**harness_metrics_full, 'step': global_step})
     print('Pre Final harness results: \n', harness_metrics_full, '\n')
-
-    model = model.float() # back to fp32, for model convertion. may not even matter
+    #model = model.float() # back to fp32, for model convertion. may not even matter
 
 if args.save_model:
     model = model.cpu()
@@ -322,7 +320,6 @@ if args.save_model:
 if args.eval_full:
     if torch.cuda.is_available(): model = model.cuda()
     model = model.eval(); 
-    # adaptive_rank_selection.freeze_model_masks(model, should_freeze=True)
 
     harness_metrics_full = eval_utils.evaluate_with_harness_full(model, tokenizer, device, debug=args.debug, batch_size=args.eval_batch_size)
     harness_metrics_full = {'final_' + k: v for k, v in harness_metrics_full.items()}
