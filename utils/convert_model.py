@@ -113,7 +113,7 @@ def replace_with_compressed_layer(model):
     
     replace_config = {} 
     i = 0
-    for name, module in tqdm(model.named_modules(), total=total_len, desc='Replacing Linear with Low-Rank Layers', mininterval=5):
+    for name, module in tqdm(model.named_modules(), total=total_len, desc='Saving model, converting layers to low-rank', mininterval=5):
         if module in linear_info:
             info = linear_info[module]
 
