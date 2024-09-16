@@ -105,6 +105,7 @@ class LowrankLinear(torch.nn.Module):
         self.E_train = Hypernetwork(len(self.E), 32, 64)
         self.tau = tau
         self.use_stored_masks = False
+        self.E_train_mask = None 
 
     def forward(self, inputs):
         """
@@ -138,21 +139,18 @@ class LowrankLinear(torch.nn.Module):
         Returns:
             torch.Tensor: Mask for singular value selection.
         """
-        logit_mask = self.E_train() + self.b
-        E_train_mask = gumbel_sigmoid(logit_mask, tau=self.tau)
 
-        if is_training:
-            pass
-        else:
-            E_train_mask = E_train_mask > 0.5
-            #compression_rate = E_train_mask.sum().item() * (self.in_features + self.out_features) / (self.in_features * self.out_features)
-            # if compression_rate > 0.97:
-            #     E_train_mask = torch.ones_like(self.E_train, dtype=torch.bool)
-            m = torch.zeros_like(E_train_mask, device=E_train_mask.device, requires_grad=False)
-            m[:E_train_mask.sum().item()] = 1.
-            return m 
+        if is_training or self.E_train_mask is None:
+            logit_mask = self.E_train() + self.b
+            self.E_train_mask = gumbel_sigmoid(logit_mask, tau=self.tau)
 
-        return E_train_mask
+        if not is_training:
+            E_train_mask = self.E_train_mask > 0.5
+            topk_mask = torch.zeros_like(E_train_mask, device=E_train_mask.device, requires_grad=False)
+            topk_mask[:E_train_mask.sum().item()] = 1.
+            return topk_mask
+
+        return self.E_train_mask
 
     def __str__(self):
         return f"LowrankLinear(in_features={self.in_features}, out_features={self.out_features}, rank={self.rank})"
