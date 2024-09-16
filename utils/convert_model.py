@@ -31,6 +31,8 @@ def convert_linear_to_compressed(module):
     m,n,r =  module.UE.size(0), module.V_t.size(1), E_train_mask.sum().item()
     compression_ratio = (m*r + n*r)/(m*n)
 
+    E_train_mask = E_train_mask.to(module.UE.device).bool() 
+
     # if compression is achieved, create lowrank layer 
     if compression_ratio < 1.:
         UE = module.UE[:, E_train_mask]
