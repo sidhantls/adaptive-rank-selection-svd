@@ -277,11 +277,10 @@ with open(stats_path, 'w') as f:
     json.dump(compression_metadata, f)
 wandb.Artifact(name="compression_metadata", type="dataset").add_file(stats_path)
    
-# evaluate the final model as well
+# evaluate the final model, before converting to low-rank - sanity check 
 if args.eval_full:
     if torch.cuda.is_available(): 
         model = model.cuda()
-        #model = model.half()
 
     model = model.eval()
     
@@ -289,7 +288,6 @@ if args.eval_full:
     harness_metrics_full = {'final_bc_' + k: v for k, v in harness_metrics_full.items()} # evaluate before converting the model, sanity check
     wandb.log({**harness_metrics_full, 'step': global_step})
     print('Pre Final harness results: \n', harness_metrics_full, '\n')
-    #model = model.float() # back to fp32, for model convertion. may not even matter
 
 if args.save_model:
     model = model.cpu()
