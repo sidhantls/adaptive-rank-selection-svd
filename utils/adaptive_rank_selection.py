@@ -8,7 +8,6 @@ import pdb
 from collections import defaultdict
 from tqdm import tqdm 
 
-
 def gumbel_sigmoid(logits, tau=0.5):
     """Apply Gumbel Sigmoid to logits"""
 
@@ -21,6 +20,17 @@ def gumbel_sigmoid(logits, tau=0.5):
     gumbel_logits = logits + gumbel_noise
     y_soft = torch.sigmoid(gumbel_logits / tau)
     return y_soft
+
+class STE(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, input):
+        # Forward pass: apply threshold (> 0.5)
+        return (input > 0.5).float()
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        # Backward pass: STE returns the gradient of the original input
+        return grad_output
 
 class Hypernetwork(nn.Module):
     def __init__(self, num_singular_values, input_size, hidden_size):
@@ -143,6 +153,7 @@ class LowrankLinear(torch.nn.Module):
         if is_training or self.E_train_mask is None:
             logit_mask = self.E_train() + self.b
             self.E_train_mask = gumbel_sigmoid(logit_mask, tau=self.tau)
+            self.E_train_mask = STE.apply(self.E_train_mask)
 
         if not is_training:
             E_train_mask = self.E_train_mask > 0.5
