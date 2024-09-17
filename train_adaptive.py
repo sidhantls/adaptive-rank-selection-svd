@@ -254,11 +254,12 @@ for epoch in range(args.epochs):
         window_size = 50 # continue training for X more steps after target is reached
         current_mean = np.mean(param_ratios[-window_size:])
 
-        is_compression_reached = len(param_ratios) > window_size and (current_mean - args.target_param_ratio) < 0.005
+        is_compression_reached = len(param_ratios) > window_size and current_mean - args.target_param_ratio < 0.0030
  
         # if pre-training mode, early stop after 5% more steps if performance is constant
         if is_compression_reached: 
             print(f'\nCompression Ratio: {current_mean} reached for {window_size} steps, early stopping training...\n')
+            print(f'Current mean: {current_mean}, target ratio: {args.target_param_ratio}')
             break
 
     if is_compression_reached:
