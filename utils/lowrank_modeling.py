@@ -48,10 +48,10 @@ def replace_with_lowrank_linear(model, args, svd_info={}):
             else: 
                 svd_vector = None
 
-            if args.layer_type == 'gumbel':
-                pass
+            if args.layer_type == 'simple':
+                new_module = adaptive_rank_selection.LowrankLinearSimple(module, svd_vector, alpha=args.alpha, niter=2, tau=args.tau)
             elif args.layer_type == 'adaptive':
-                new_module = adaptive_rank_selection.LowrankLinear(module, svd_vector, alpha=1., niter=2, tau=args.tau)
+                new_module = adaptive_rank_selection.LowrankLinear(module, svd_vector, alpha=args.alpha, niter=2, tau=args.tau)
             else:
                 raise NotImplementedError(f"Unsupported layer_type {args.layer_type} in replace_linear_with_svd")
 
