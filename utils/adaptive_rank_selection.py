@@ -63,14 +63,10 @@ class LowrankLinear(torch.nn.Module):
 
         Args:
             current_layer (nn.Linear): Current linear layer to be decomposed.
-            init_frac (float): Initial fraction of singular values to use (default: 1.0).
             svd_vector (torch.Tensor, optional): Weight scales for weighted SVD.
             alpha (float): Hyperparameter for weighted ASVD (default: 1.0).
             niter (int): Number of SVD iterations (default: 2).
             tau (float): Temperature of Gumbel sigmoid (lower values create harder boundaries) (default: 0.1).
-            bias_init (bool): Flag to add bias in initialization of the weights (default: False).
-            mask_eval_type (str): Type of evaluation mode: 'topk', 'threshold', or '' (default: "").
-            fix_compress_ratio (float, optional): Fixed compression ratio.
         """
         super(LowrankLinear, self).__init__()
 
@@ -165,6 +161,123 @@ class LowrankLinear(torch.nn.Module):
 
     def __str__(self):
         return f"LowrankLinear(in_features={self.in_features}, out_features={self.out_features}, rank={self.rank})"
+
+    def __repr__(self):
+        return self.__str__()
+    
+def calculate_r_align(compression_calculator):
+    """
+    Loss to align learned mask to singular value properties
+    """
+    loss = 0.
+    for module in compression_calculator.lowrank_layers: 
+        with torch.no_grad():
+            k = module.calculate_mask(False).sum().item()
+            m = torch.zeros_like(module.E_train_mask, device=module.E_train_mask.device, requires_grad=False)
+            m[:k] = 1.
+        
+        E = module.E.to(module.E_train_mask.dtype).to(module.E_train_mask.device)
+        loss += torch.sum((module.E_train_mask * E - m * E)**2)
+
+    loss = loss/len(compression_calculator.lowrank_layers)
+    return loss
+
+class LowrankLinearSimple(torch.nn.Module):
+    def __init__(self, current_layer, svd_vector, alpha=1., niter=2, tau=0.4):
+        """
+        Linear estimator for the mask
+        """
+        super(LowrankLinearSimple, self).__init__()
+
+        if not isinstance(current_layer, torch.nn.Linear):
+            raise ValueError(f"Expected input into SVDLayer be of instance nn.Linear, got {type(current_layer)}")
+        
+        # bias to add to gumbel sigmoid to ensure full rank is selected
+        dtype = current_layer.weight.dtype
+        self.in_features, self.out_features = current_layer.in_features, current_layer.out_features
+        self.rank = min(current_layer.weight.shape[1], current_layer.weight.shape[0])
+
+        weight = current_layer.weight.float()
+        layer_device = weight.device
+
+        if torch.cuda.is_available():
+            weight = weight.cuda()
+
+        if svd_vector is not None: 
+            svd_vector = svd_vector.to(weight.device)**alpha
+            weight = weight * svd_vector.unsqueeze(0)
+        
+        with torch.no_grad():
+            U, E, V = torch.svd_lowrank(weight, 
+                                        q=self.rank,
+                                        niter=niter)
+        
+        if svd_vector is not None: 
+            V = V / svd_vector.unsqueeze(1)
+        
+        U, E, V = U.to(layer_device), E.to(layer_device), V.to(layer_device)
+
+        assert len(E.shape) == 1, 'expected singular values to have only one dim'
+
+        # precompute EV for efficency
+        self.UE = torch.nn.Parameter((U * E.unsqueeze(0)).to(dtype), requires_grad=True)
+        self.V_t = torch.nn.Parameter(V.T.to(dtype), requires_grad=True)
+        self.E = E
+        self.E.requires_grad=False
+
+        init_vector = torch.linspace(6, 3., len(E), device=E.device).to(dtype)
+        self.E_train = torch.nn.Parameter(init_vector)
+
+        self.tau = tau
+        self.use_stored_masks = False
+        self.E_train_mask = None 
+
+    def forward(self, inputs):
+        """
+        Computes forward pass with selection of singular values through predicted mask.
+
+        Args:
+            inputs (torch.Tensor): Input tensor.
+
+        Returns:
+            torch.Tensor: Output tensor.
+        """
+        
+        self.E_train_mask = self.calculate_mask(is_training=self.training)
+        inputs = inputs.transpose(1, 2)
+        output = (self.UE * self.E_train_mask.unsqueeze(0)) @ (self.V_t @ inputs)
+        output = output.transpose(1, 2)
+
+        return output
+    
+    def calculate_mask(self, is_training, return_topk=False):
+        """
+        Calculates the mask for singular value selection. During training, it uses Gumbel-Sigmoid approximation.
+        During evaluation, various non-differentiable operations can be used
+
+        Args:
+            is_training (bool): Whether the model is in training mode.
+            return_probs (bool): Whether to return probabilities instead of binary mask (default: False).
+
+        Returns:
+            torch.Tensor: Mask for singular value selection.
+        """
+
+        if is_training or self.E_train_mask is None:
+            logit_mask = self.E_train
+            self.E_train_mask = gumbel_sigmoid(logit_mask, tau=self.tau)
+            self.E_train_mask = STE.apply(self.E_train_mask)
+
+        if not is_training:
+            E_train_mask = self.E_train_mask > 0.5
+            topk_mask = torch.zeros_like(E_train_mask, device=E_train_mask.device, requires_grad=False)
+            topk_mask[:E_train_mask.sum().item()] = 1.
+            return topk_mask
+
+        return self.E_train_mask
+
+    def __str__(self):
+        return f"LowrankLinearSimple(in_features={self.in_features}, out_features={self.out_features}, rank={self.rank})"
 
     def __repr__(self):
         return self.__str__()
