@@ -88,6 +88,8 @@ parser.add_argument("--lambda_scale", type=float, default=16., help="Scale facto
 
 parser.add_argument("--gamma_scale", type=float, default=10., help="Scale factor of alignment loss")
 
+parser.add_argument("--beta_scale", type=float, default=1., help="Scale factor for pretraining loss")
+
 parser.add_argument("--p_param", type=float, default=0.4, help="Param for compression loss")
 
 parser.add_argument("--layer_type", type=str, default='adaptive', help="Choice of HyperNetwork", choices=['adaptive', 'simple'])
@@ -246,7 +248,8 @@ for epoch in range(args.epochs):
             # adaptive_rank_selection.freeze_model_masks(model, should_freeze=True)
 
             metrics = adaptive_rank_selection.eval_model(model, test_dl, tokenizer.pad_token_id, args, compression_calculator)
-            harness_metrics = eval_utils.evaluate_with_harness(model, tokenizer, device=model.device, debug=args.debug, batch_size=args.batch_size)
+            model = model.cuda() 
+            harness_metrics = eval_utils.evaluate_with_harness(model, tokenizer, device=model.device, debug=args.debug, batch_size=args.eval_batch_size)
         
             wandb.log({**metrics, **harness_metrics, 'step': global_step})
             # adaptive_rank_selection.freeze_model_masks(model, should_freeze=False)
@@ -254,7 +257,7 @@ for epoch in range(args.epochs):
 
         window_size = 50 # continue training for X more steps after target is reached
         current_mean = np.mean(param_ratios[-window_size:])
-
+        if args.layer_type=='simple': window_size=100 # forward pass is faster and takes longer to converge
         is_compression_reached = len(param_ratios) > window_size and current_mean - args.target_param_ratio < 0.0030
  
         # if pre-training mode, early stop after 5% more steps if performance is constant
@@ -279,16 +282,16 @@ with open(stats_path, 'w') as f:
 wandb.Artifact(name="compression_metadata", type="dataset").add_file(stats_path)
    
 # evaluate the final model, before converting to low-rank - sanity check 
-if args.eval_full:
-    if torch.cuda.is_available(): 
-        model = model.cuda()
-
-    model = model.eval()
-    
-    harness_metrics_full = eval_utils.evaluate_with_harness_full(model, tokenizer, device, debug=args.debug, batch_size=args.eval_batch_size)
-    harness_metrics_full = {'final_bc_' + k: v for k, v in harness_metrics_full.items()} # evaluate before converting the model, sanity check
-    wandb.log({**harness_metrics_full, 'step': global_step})
-    print('Pre Final harness results: \n', harness_metrics_full, '\n')
+#if args.eval_full:
+#    if torch.cuda.is_available(): 
+#        model = model.cuda()
+#
+#    model = model.eval()
+#    
+#    harness_metrics_full = eval_utils.evaluate_with_harness_full(model, tokenizer, device, debug=args.debug, batch_size=args.eval_batch_size)
+#    harness_metrics_full = {'final_bc_' + k: v for k, v in harness_metrics_full.items()} # evaluate before converting the model, sanity check
+#    wandb.log({**harness_metrics_full, 'step': global_step})
+#    print('Pre Final harness results: \n', harness_metrics_full, '\n')
 
 if args.save_model:
     model = model.cpu()
