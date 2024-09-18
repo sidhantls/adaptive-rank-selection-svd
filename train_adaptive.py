@@ -90,10 +90,11 @@ parser.add_argument("--gamma_scale", type=float, default=10., help="Scale factor
 
 parser.add_argument("--p_param", type=float, default=0.4, help="Param for compression loss")
 
+parser.add_argument("--layer_type", type=str, default='adaptive', help="Choice of HyperNetwork", choices=['adaptive', 'simple'])
+
 args = parser.parse_args()
 
 # constant
-args.layer_type='adaptive'
 args.epochs=1
 
 os.makedirs(args.cache_dir, exist_ok=True)
