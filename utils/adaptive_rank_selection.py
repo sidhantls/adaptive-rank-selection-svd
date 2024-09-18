@@ -319,6 +319,15 @@ def calculate_R_loss(compression_calculator, target_param_ratio:int):
     loss = torch.log(a/target_param_ratio)
     return loss
 
+def calculate_R_loss_simple(compression_calculator):
+    """
+    Compression regularizer
+    
+    """
+    loss = 0. 
+    for module in compression_calculator.lowrank_layers: 
+        loss += module.E_train_mask.mean() 
+    return loss/len(compression_calculator.lowrank_layers)
 
 def training_step(model, batch, pad_token_id, args, compression_calculator, is_eval=False):
     """
@@ -342,9 +351,13 @@ def training_step(model, batch, pad_token_id, args, compression_calculator, is_e
     if is_eval: 
         return None, logits_loss, None, None, perplexity, None, None, None
 
-
+    
     r_align_loss = calculate_r_align(compression_calculator)
-    r_loss = calculate_R_loss(compression_calculator, args.p_param)
+    
+    if args.r_loss == 'default': 
+        r_loss = calculate_R_loss(compression_calculator, args.p_param)
+    elif args.r_loss == 'simple':
+        r_loss = calculate_R_loss_simple(compression_calculator)
 
     with torch.no_grad():
         current_param_ratio = compression_calculator.get_compression()
