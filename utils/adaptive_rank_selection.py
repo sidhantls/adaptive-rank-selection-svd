@@ -355,7 +355,7 @@ def training_step(model, batch, pad_token_id, args, compression_calculator, is_e
     if abs(current_param_ratio - args.target_param_ratio) < 0.002: 
         lambda_scale = 0
 
-    loss = logits_loss + lambda_scale * r_loss + args.gamma_scale * r_align_loss
+    loss = args.beta_scale * logits_loss + lambda_scale * r_loss + args.gamma_scale * r_align_loss
 
     return loss, logits_loss, r_align_loss, r_loss, perplexity, keep_ratio, current_param_ratio, lambda_scale
 
