@@ -94,6 +94,8 @@ parser.add_argument("--p_param", type=float, default=0.4, help="Param for compre
 
 parser.add_argument("--layer_type", type=str, default='adaptive', help="Choice of HyperNetwork", choices=['adaptive', 'simple'])
 
+parser.add_argument("--r_loss", type=str, default='default', help="Loss function to use for compression", choices=['default', 'simple'])
+
 args = parser.parse_args()
 
 # constant
