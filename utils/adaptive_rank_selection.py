@@ -87,6 +87,7 @@ class LowrankLinear(torch.nn.Module):
             weight = weight.cuda()
 
         if svd_vector is not None: 
+            svd_vector += 1e-6 # division by zero
             svd_vector = svd_vector.to(weight.device)**alpha
             weight = weight * svd_vector.unsqueeze(0)
         
@@ -123,12 +124,14 @@ class LowrankLinear(torch.nn.Module):
         Returns:
             torch.Tensor: Output tensor.
         """
-        if self.use_stored_masks: # doesnt work for some reason, ignore
-            return self.E_train_mask > 0.5
+        #if self.use_stored_masks: # doesnt work for some reason, ignore
+        #    return self.E_train_mask > 0.5
         
-        self.E_train_mask = self.calculate_mask(is_training=self.training)
+        E_train_mask = self.calculate_mask(is_training=self.training)
+        if self.training:
+            self.E_train_mask = E_train_mask 
         inputs = inputs.transpose(1, 2)
-        output = (self.UE * self.E_train_mask.unsqueeze(0)) @ (self.V_t @ inputs)
+        output = (self.UE * E_train_mask.unsqueeze(0)) @ (self.V_t @ inputs)
         output = output.transpose(1, 2)
 
         return output
@@ -148,16 +151,19 @@ class LowrankLinear(torch.nn.Module):
 
         if is_training or self.E_train_mask is None:
             logit_mask = self.E_train() + self.b
-            self.E_train_mask = gumbel_sigmoid(logit_mask, tau=self.tau)
-            self.E_train_mask = STE.apply(self.E_train_mask)
+            E_train_mask = gumbel_sigmoid(logit_mask, tau=self.tau)
+            E_train_mask = STE.apply(E_train_mask)
+            self.E_train_mask = E_train_mask
+        else:
+            E_train_mask = self.E_train_mask
 
         if not is_training:
-            E_train_mask = self.E_train_mask > 0.5
+            E_train_mask = E_train_mask > 0.5
             topk_mask = torch.zeros_like(E_train_mask, device=E_train_mask.device, requires_grad=False)
             topk_mask[:E_train_mask.sum().item()] = 1.
             return topk_mask
 
-        return self.E_train_mask
+        return E_train_mask
 
     def __str__(self):
         return f"LowrankLinear(in_features={self.in_features}, out_features={self.out_features}, rank={self.rank})"
@@ -165,22 +171,22 @@ class LowrankLinear(torch.nn.Module):
     def __repr__(self):
         return self.__str__()
     
-def calculate_r_align(compression_calculator):
-    """
-    Loss to align learned mask to singular value properties
-    """
-    loss = 0.
-    for module in compression_calculator.lowrank_layers: 
-        with torch.no_grad():
-            k = module.calculate_mask(False).sum().item()
-            m = torch.zeros_like(module.E_train_mask, device=module.E_train_mask.device, requires_grad=False)
-            m[:k] = 1.
-        
-        E = module.E.to(module.E_train_mask.dtype).to(module.E_train_mask.device)
-        loss += torch.sum((module.E_train_mask * E - m * E)**2)
-
-    loss = loss/len(compression_calculator.lowrank_layers)
-    return loss
+#def calculate_r_align(compression_calculator):
+#    """
+#    Loss to align learned mask to singular value properties
+#    """
+#    loss = 0.
+#    for module in compression_calculator.lowrank_layers: 
+#        with torch.no_grad():
+#            k = module.calculate_mask(False).sum().item()
+#            m = torch.zeros_like(module.E_train_mask, device=module.E_train_mask.device, requires_grad=False)
+#            m[:k] = 1.
+#        
+#        E = module.E.to(module.E_train_mask.dtype).to(module.E_train_mask.device)
+#        loss += torch.sum((module.E_train_mask * E - m * E)**2)
+#
+#    loss = loss/len(compression_calculator.lowrank_layers)
+#   return loss
 
 class LowrankLinearSimple(torch.nn.Module):
     def __init__(self, current_layer, svd_vector, alpha=1., niter=2, tau=0.4):
@@ -204,6 +210,7 @@ class LowrankLinearSimple(torch.nn.Module):
             weight = weight.cuda()
 
         if svd_vector is not None: 
+            svd_vector += 1e-6 # division by zero
             svd_vector = svd_vector.to(weight.device)**alpha
             weight = weight * svd_vector.unsqueeze(0)
         
@@ -243,9 +250,11 @@ class LowrankLinearSimple(torch.nn.Module):
             torch.Tensor: Output tensor.
         """
         
-        self.E_train_mask = self.calculate_mask(is_training=self.training)
+        E_train_mask = self.calculate_mask(is_training=self.training)
+        if self.training:
+            self.E_train_mask = E_train_mask
         inputs = inputs.transpose(1, 2)
-        output = (self.UE * self.E_train_mask.unsqueeze(0)) @ (self.V_t @ inputs)
+        output = (self.UE * E_train_mask.unsqueeze(0)) @ (self.V_t @ inputs)
         output = output.transpose(1, 2)
 
         return output
@@ -265,16 +274,18 @@ class LowrankLinearSimple(torch.nn.Module):
 
         if is_training or self.E_train_mask is None:
             logit_mask = self.E_train
-            self.E_train_mask = gumbel_sigmoid(logit_mask, tau=self.tau)
-            self.E_train_mask = STE.apply(self.E_train_mask)
+            E_train_mask = gumbel_sigmoid(logit_mask, tau=self.tau)
+            #self.E_train_mask = STE.apply(self.E_train_mask)
+        else:
+            E_train_mask = self.E_train_mask
 
         if not is_training:
-            E_train_mask = self.E_train_mask > 0.5
+            E_train_mask = E_train_mask > 0.5
             topk_mask = torch.zeros_like(E_train_mask, device=E_train_mask.device, requires_grad=False)
             topk_mask[:E_train_mask.sum().item()] = 1.
             return topk_mask
 
-        return self.E_train_mask
+        return E_train_mask
 
     def __str__(self):
         return f"LowrankLinearSimple(in_features={self.in_features}, out_features={self.out_features}, rank={self.rank})"
@@ -289,12 +300,14 @@ def calculate_r_align(compression_calculator):
     loss = 0.
     for module in compression_calculator.lowrank_layers: 
         with torch.no_grad():
-            k = module.calculate_mask(False).sum().item()
-            m = torch.zeros_like(module.E_train_mask, device=module.E_train_mask.device, requires_grad=False)
-            m[:k] = 1.
+            m = module.calculate_mask(False).detach()
+            #k = module.E_train_mask.detach().sum().item()
+            #m = torch.zeros_like(module.E_train_mask, device=module.E_train_mask.device, requires_grad=False)
+            #m[:k] = 1.
         
         E = module.E.to(module.E_train_mask.dtype).to(module.E_train_mask.device)
-        loss += torch.sum((module.E_train_mask * E - m * E)**2)
+        #loss += torch.sum((module.E_train_mask * E - m * E)**2)
+        loss += F.mse_loss(module.E_train_mask * E, m * E, reduction='mean')
 
     loss = loss/len(compression_calculator.lowrank_layers)
     return loss
@@ -326,7 +339,8 @@ def calculate_R_loss_simple(compression_calculator):
     """
     loss = 0. 
     for module in compression_calculator.lowrank_layers: 
-        loss += module.E_train_mask.mean() 
+        #loss += module.E_train_mask.mean() 
+        loss += module.E_train.mean()
     return loss/len(compression_calculator.lowrank_layers)
 
 def training_step(model, batch, pad_token_id, args, compression_calculator, is_eval=False):
@@ -360,8 +374,9 @@ def training_step(model, batch, pad_token_id, args, compression_calculator, is_e
         r_loss = calculate_R_loss_simple(compression_calculator)
 
     with torch.no_grad():
-        current_param_ratio = compression_calculator.get_compression()
-        keep_ratio = compression_calculator.get_sv_ratio()
+        current_param_ratio, keep_ratio = compression_calculator.get_compression_and_sv()
+        #current_param_ratio = compression_calculator.get_compression()
+        #keep_ratio = compression_calculator.get_sv_ratio()
 
     # if compression is reached, ignore compression regularizer
     lambda_scale = args.lambda_scale
