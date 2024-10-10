@@ -17,7 +17,8 @@ from transformers import (
     AutoModel,
     AutoModelForCausalLM,
     AutoTokenizer,
-    LlamaTokenizerFast
+    LlamaTokenizerFast,
+    GemmaTokenizerFast
 )
 
 from utils import (
@@ -122,6 +123,13 @@ if 'Llama-2' in args.model_name:
     tokenizer.pad_token = tokenizer.unk_token
     tokenizer.pad_token_id = tokenizer.unk_token_id
     print('Loaded llama tokenizer')
+
+elif 'Llama-3' in args.model_name:
+    tokenizer = LlamaTokenizerFast.from_pretrained(args.model_name, cache_dir=args.cache_dir)
+    tokenizer.pad_token = tokenizer.eos_token
+elif 'gemma' in args.model_name.lower():
+    tokenizer = GemmaTokenizerFast.from_pretrained(args.model_name, cache_dir=args.cache_dir)
+    tokenizer.pad_token = tokenizer.eos_token
 else:
     tokenizer = AutoTokenizer.from_pretrained(args.model_name, cache_dir=args.cache_dir)
 
@@ -197,11 +205,14 @@ is_compression_reached = False
 
 
 # eval every steps before train
-if not args.debug:
-    model = model.eval()
-    harness_metrics = eval_utils.evaluate_with_harness(model, tokenizer, device=model.device, debug=args.debug, batch_size=args.batch_size)
-    wandb.log({**harness_metrics, 'step': 0})
-    model = model.train()
+#if not args.debug:
+#    model = model.eval()
+#    harness_metrics = eval_utils.evaluate_with_harness(model, tokenizer, device=model.device, debug=args.debug, batch_size=args.batch_size)
+#    wandb.log({**harness_metrics, 'step': 0})
+#    model = model.train()
+
+# flag, do one eval at 5% compression
+eval_at_95 = True
 
 print('Starting training..')
 for epoch in range(args.epochs):
@@ -210,7 +221,6 @@ for epoch in range(args.epochs):
     num_batches = 0
 
     for batch_idx, batch in enumerate(tqdm(train_dl, desc=f"Train Epoch {epoch+1}", mininterval=5)):
-
         with torch.autocast(device_type=model.device.type, dtype=train_precision, enabled=use_amp):
             loss, logits_loss, r_align_loss, r_loss, perplexity, keep_ratio, current_param_ratio, lambda_scale = adaptive_rank_selection.training_step(model, batch, tokenizer.pad_token_id, args, compression_calculator)
 
@@ -257,7 +267,7 @@ for epoch in range(args.epochs):
             # adaptive_rank_selection.freeze_model_masks(model, should_freeze=False)
             model = model.train()
 
-        window_size = 50 # continue training for X more steps after target is reached
+        window_size = 100 # continue training for X more steps after target is reached
         current_mean = np.mean(param_ratios[-window_size:])
         if args.layer_type=='simple': window_size=100 # forward pass is faster and takes longer to converge
         is_compression_reached = len(param_ratios) > window_size and current_mean - args.target_param_ratio < 0.0030
@@ -267,6 +277,13 @@ for epoch in range(args.epochs):
             print(f'\nCompression Ratio: {current_mean} reached for {window_size} steps, early stopping training...\n')
             print(f'Current mean: {current_mean}, target ratio: {args.target_param_ratio}')
             break
+
+        if eval_at_95 and current_param_ratio - 0.95 < 0.:
+            model = model.eval();
+            harness_metrics = eval_utils.evaluate_with_harness(model, tokenizer, device=model.device, debug=args.debug, batch_size=args.eval_batch_size)
+            wandb.log({**harness_metrics, 'step': global_step})   
+            model = model.train()
+            eval_at_95=False
 
     if is_compression_reached:
         break 
