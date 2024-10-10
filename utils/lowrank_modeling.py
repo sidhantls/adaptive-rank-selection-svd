@@ -145,8 +145,11 @@ class CompressionCalculator:
         params2 = 0 
         params_wo_lowrank = 0 
         for module in self.lowrank_layers: 
-            with torch.no_grad():
-                rank = module.calculate_mask(is_training=False).sum().item()
+            if module.E_train_mask is None:
+                with torch.no_grad():
+                    rank = module.calculate_mask(is_training=False).sum().item()
+            else:
+                rank = module.E_train_mask.detach().sum().item()
 
             params_with_compression =  rank * (module.in_features + module.out_features)
             params_wo_compression = module.in_features * module.out_features
@@ -168,3 +171,34 @@ class CompressionCalculator:
             keep_ratio += module.calculate_mask(is_training=True).mean()
 
         return keep_ratio/len(self.lowrank_layers)
+
+    def get_compression_and_sv(self):
+        params2 = 0
+        params_wo_lowrank = 0
+        sv_ratio = 0.
+        for module in self.lowrank_layers:
+            if module.E_train_mask is None:
+                with torch.no_grad():
+                    E_train_mask = module.calculate_mask(is_training=False).detach()
+            else:
+                E_train_mask = module.E_train_mask.detach()
+            
+            rank = (E_train_mask > 0.5).sum().item()
+            sv_ratio += rank/len(E_train_mask)
+
+            params_with_compression =  rank * (module.in_features + module.out_features)
+            params_wo_compression = module.in_features * module.out_features
+
+            # in reality, layer is not compressed when compression is huge
+            if params_with_compression/params_wo_compression < 1.:
+                params2 += params_with_compression
+            else:
+                params2 += params_wo_compression
+
+            params_wo_lowrank +=  params_wo_compression
+
+        compression = (self.params1 + params2) / (self.params1 + params_wo_lowrank)
+        sv_ratio = sv_ratio/len(self.lowrank_layers)
+
+        return compression, sv_ratio
+
