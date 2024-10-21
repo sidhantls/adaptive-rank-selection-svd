@@ -56,7 +56,7 @@ for i in ${!COMP_VALUES[@]}; do
         # Command for the first iteration without extra arguments
         python train_adaptive.py --model=$MODEL --target_param_ratio=$COMP --eval_full --batch_size=$BATCH_SIZE --lr=$LR --num_train_samples=$NUM_TRAIN_SAMPLES --exp_name=$EXP_NAME --max_length=$MAX_LEN --cache_dir=$CACHE_DIR --eval_freq_steps=500 --eval_batch_size=$EVAL_BS --alpha=0.5 --lambda=$LAMBDA --gamma=$GAMMA --act_aware=$ACT_AWARE  --layer_type=$LTYPE --beta_scale=$BETA --r_loss=$R_LOSS --tau=0.4 --p_param=$p_param
     else
-        python train_adaptive.py --model=$MODEL --target_param_ratio=$COMP --eval_full --batch_size=$BATCH_SIZE --lr=$LR --num_train_samples=$NUM_TRAIN_SAMPLES --exp_name=$EXP_NAME --max_length=$MAX_LEN --cache_dir=$CACHE_DIR --eval_freq_steps=500 --eval_batch_size=$EVAL_BS --alpha=0.5 --lambda=$LAMBDA --gamma=$GAMMA --act_aware=$ACT_AWARE --load_act_cache --layer_type=$LTYPE --beta_scale=$BETA --r_loss=$R_LOSS
+        python train_adaptive.py --model=$MODEL --target_param_ratio=$COMP --eval_full --batch_size=$BATCH_SIZE --lr=$LR --num_train_samples=$NUM_TRAIN_SAMPLES --exp_name=$EXP_NAME --max_length=$MAX_LEN --cache_dir=$CACHE_DIR --eval_freq_steps=500 --eval_batch_size=$EVAL_BS --alpha=0.5 --lambda=$LAMBDA --gamma=$GAMMA --act_aware=$ACT_AWARE --layer_type=$LTYPE --beta_scale=$BETA --r_loss=$R_LOSS --tau=0.4 --p_param=$p_param --load_act_cache
     fi
 done
 ```
