@@ -314,7 +314,11 @@ def calculate_r_align(compression_calculator):
             #m[:k] = 1.
         
         E = module.E.to(module.E_train_mask.dtype).to(module.E_train_mask.device)
-        loss += F.mse_loss(module.E_train_mask * E, m * E, reduction='mean')
+
+        if isinstance(loss, torch.Tensor): 
+            loss += F.mse_loss(module.E_train_mask * E, m * E, reduction='mean').to(loss.device)
+        else:
+            loss += F.mse_loss(module.E_train_mask * E, m * E, reduction='mean')
 
     loss = loss/len(compression_calculator.lowrank_layers)
     return loss
