@@ -131,6 +131,10 @@ class LowrankLinear(torch.nn.Module):
         if self.training:
             self.E_train_mask = E_train_mask 
         inputs = inputs.transpose(1, 2)
+
+        if inputs.device != self.V_t.device: # multi-gpu setup
+            inputs = inputs.to(self.V_t.device)
+
         output = (self.UE * E_train_mask.unsqueeze(0)) @ (self.V_t @ inputs)
         output = output.transpose(1, 2)
 
@@ -253,6 +257,10 @@ class LowrankLinearSimple(torch.nn.Module):
         E_train_mask = self.calculate_mask(is_training=self.training)
         if self.training:
             self.E_train_mask = E_train_mask
+
+        if inputs.device != self.V_t.device: # multi-gpu setup
+            inputs = inputs.to(self.V_t.device)
+        
         inputs = inputs.transpose(1, 2)
         output = (self.UE * E_train_mask.unsqueeze(0)) @ (self.V_t @ inputs)
         output = output.transpose(1, 2)
@@ -275,7 +283,7 @@ class LowrankLinearSimple(torch.nn.Module):
         if is_training or self.E_train_mask is None:
             logit_mask = self.E_train
             E_train_mask = gumbel_sigmoid(logit_mask, tau=self.tau)
-            #self.E_train_mask = STE.apply(self.E_train_mask)
+            # self.E_train_mask = STE.apply(self.E_train_mask)
         else:
             E_train_mask = self.E_train_mask
 
