@@ -134,7 +134,8 @@ class LowrankLinear(torch.nn.Module):
 
         if inputs.device != self.V_t.device: # multi-gpu setup
             inputs = inputs.to(self.V_t.device)
-
+        if E_train_mask != self.V_t.device:
+            E_train_mask = E_train_mask.to(self.V_t.device)
         output = (self.UE * E_train_mask.unsqueeze(0)) @ (self.V_t @ inputs)
         output = output.transpose(1, 2)
 
