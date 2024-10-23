@@ -266,7 +266,6 @@ for epoch in range(args.epochs):
             # adaptive_rank_selection.freeze_model_masks(model, should_freeze=True)
 
             metrics = adaptive_rank_selection.eval_model(model, test_dl, tokenizer.pad_token_id, args, compression_calculator)
-            model = model.cuda() 
             harness_metrics = eval_utils.evaluate_with_harness(model, tokenizer, device=model.device, debug=args.debug, batch_size=args.eval_batch_size)
         
             wandb.log({**metrics, **harness_metrics, 'step': global_step})
