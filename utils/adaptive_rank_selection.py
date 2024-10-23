@@ -284,7 +284,7 @@ class LowrankLinearSimple(torch.nn.Module):
         if is_training or self.E_train_mask is None:
             logit_mask = self.E_train
             E_train_mask = gumbel_sigmoid(logit_mask, tau=self.tau)
-            # self.E_train_mask = STE.apply(self.E_train_mask)
+            E_train_mask = STE.apply(E_train_mask)
         else:
             E_train_mask = self.E_train_mask
 
