@@ -211,11 +211,11 @@ is_compression_reached = False
 
 
 # eval every steps before train
-#if not args.debug:
-#    model = model.eval()
-#    harness_metrics = eval_utils.evaluate_with_harness(model, tokenizer, device=model.device, debug=args.debug, batch_size=args.batch_size)
-#    wandb.log({**harness_metrics, 'step': 0})
-#    model = model.train()
+if not args.debug:
+    model = model.eval()
+    harness_metrics = eval_utils.evaluate_with_harness(model, tokenizer, device=model.device, debug=args.debug, batch_size=args.batch_size)
+    wandb.log({**harness_metrics, 'step': 0})
+    model = model.train()
 
 # flag, do one eval at 5% compression
 eval_at_95 = True
