@@ -187,8 +187,14 @@ else:
 
 # pass in uncompressed model 
 compression_calculator = lowrank_modeling.CompressionCalculator(model, total_params=num_params_old*1e9)
-start = time.time()
+hypernet_operator = adaptive_rank_selection.HypernetOperator(compression_calculator.lowrank_layers) # only used when adaptive is used
+
+if args.layer_type=='adaptive':
+    with torch.no_grad():
+        hypernet_operator.update_network_with_sv_hidden_state() # calculate hypernet hidden state
+
 current_compression = compression_calculator.get_compression()
+
 print('Time taken to get current compression rate (seconds):', time.time()-start)
 
 train_utils.print_nvidia_smi()
@@ -227,7 +233,11 @@ for epoch in range(args.epochs):
     num_batches = 0
 
     for batch_idx, batch in enumerate(tqdm(train_dl, desc=f"Train Epoch {epoch+1}", mininterval=5)):
+
         with torch.autocast(device_type=model.device.type, dtype=train_precision, enabled=use_amp):
+            if args.layer_type=='adaptive':
+                hypernet_operator.update_network_with_sv_hidden_state() # calculate hypernet hidden state
+        
             loss, logits_loss, r_align_loss, r_loss, perplexity, keep_ratio, current_param_ratio, lambda_scale = adaptive_rank_selection.training_step(model, batch, tokenizer.pad_token_id, args, compression_calculator)
 
         scaler.scale(loss).backward()
@@ -316,6 +326,12 @@ wandb.Artifact(name="compression_metadata", type="dataset").add_file(stats_path)
 #    harness_metrics_full = {'final_bc_' + k: v for k, v in harness_metrics_full.items()} # evaluate before converting the model, sanity check
 #    wandb.log({**harness_metrics_full, 'step': global_step})
 #    print('Pre Final harness results: \n', harness_metrics_full, '\n')
+
+# update the global hypernet hidden state
+if args.layer_type=='adaptive':
+    hypernet_operator.hypernet.eval()
+    with torch.no_grad():
+        hypernet_operator.update_network_with_sv_hidden_state() # calculate hypernet hidden state
 
 if args.save_model:
     model = model.cpu()
