@@ -177,7 +177,13 @@ if args.act_aware:
 model = model.cpu(); torch.cuda.empty_cache() # move to cpu for layer editing
 lowrank_modeling.replace_with_lowrank_linear(model, args, svd_info)
 train_utils.configure_required_grad(model)
-model = model.to(device)
+
+if '13b' in args.model_name: 
+    if torch.cuda.device_count() <= 1: 
+        raise ValueError(f'Using 13-b model requires 2 gpu, got device count: {torch.cuda.device_count()}')
+    model = train_utils.push_to_multi_gpu(model)
+else:
+    model = model.to(device)
 
 # pass in uncompressed model 
 compression_calculator = lowrank_modeling.CompressionCalculator(model, total_params=num_params_old*1e9)
@@ -205,11 +211,11 @@ is_compression_reached = False
 
 
 # eval every steps before train
-#if not args.debug:
-#    model = model.eval()
-#    harness_metrics = eval_utils.evaluate_with_harness(model, tokenizer, device=model.device, debug=args.debug, batch_size=args.batch_size)
-#    wandb.log({**harness_metrics, 'step': 0})
-#    model = model.train()
+if not args.debug:
+    model = model.eval()
+    harness_metrics = eval_utils.evaluate_with_harness(model, tokenizer, device=model.device, debug=args.debug, batch_size=args.batch_size)
+    wandb.log({**harness_metrics, 'step': 0})
+    model = model.train()
 
 # flag, do one eval at 5% compression
 eval_at_95 = True
@@ -260,7 +266,6 @@ for epoch in range(args.epochs):
             # adaptive_rank_selection.freeze_model_masks(model, should_freeze=True)
 
             metrics = adaptive_rank_selection.eval_model(model, test_dl, tokenizer.pad_token_id, args, compression_calculator)
-            model = model.cuda() 
             harness_metrics = eval_utils.evaluate_with_harness(model, tokenizer, device=model.device, debug=args.debug, batch_size=args.eval_batch_size)
         
             wandb.log({**metrics, **harness_metrics, 'step': global_step})
@@ -279,7 +284,7 @@ for epoch in range(args.epochs):
             break
 
         if eval_at_95 and current_param_ratio - 0.95 < 0.:
-            model = model.eval();
+            model = model.eval()
             harness_metrics = eval_utils.evaluate_with_harness(model, tokenizer, device=model.device, debug=args.debug, batch_size=args.eval_batch_size)
             wandb.log({**harness_metrics, 'step': global_step})   
             model = model.train()

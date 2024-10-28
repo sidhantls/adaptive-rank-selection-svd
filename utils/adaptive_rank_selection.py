@@ -131,6 +131,11 @@ class LowrankLinear(torch.nn.Module):
         if self.training:
             self.E_train_mask = E_train_mask 
         inputs = inputs.transpose(1, 2)
+
+        if inputs.device != self.V_t.device: # multi-gpu setup
+            inputs = inputs.to(self.V_t.device)
+        if E_train_mask != self.V_t.device:
+            E_train_mask = E_train_mask.to(self.V_t.device)
         output = (self.UE * E_train_mask.unsqueeze(0)) @ (self.V_t @ inputs)
         output = output.transpose(1, 2)
 
@@ -253,6 +258,10 @@ class LowrankLinearSimple(torch.nn.Module):
         E_train_mask = self.calculate_mask(is_training=self.training)
         if self.training:
             self.E_train_mask = E_train_mask
+
+        if inputs.device != self.V_t.device: # multi-gpu setup
+            inputs = inputs.to(self.V_t.device)
+        
         inputs = inputs.transpose(1, 2)
         output = (self.UE * E_train_mask.unsqueeze(0)) @ (self.V_t @ inputs)
         output = output.transpose(1, 2)
@@ -275,7 +284,7 @@ class LowrankLinearSimple(torch.nn.Module):
         if is_training or self.E_train_mask is None:
             logit_mask = self.E_train
             E_train_mask = gumbel_sigmoid(logit_mask, tau=self.tau)
-            #self.E_train_mask = STE.apply(self.E_train_mask)
+            E_train_mask = STE.apply(E_train_mask)
         else:
             E_train_mask = self.E_train_mask
 
@@ -306,8 +315,11 @@ def calculate_r_align(compression_calculator):
             #m[:k] = 1.
         
         E = module.E.to(module.E_train_mask.dtype).to(module.E_train_mask.device)
-        #loss += torch.sum((module.E_train_mask * E - m * E)**2)
-        loss += F.mse_loss(module.E_train_mask * E, m * E, reduction='mean')
+
+        if isinstance(loss, torch.Tensor): 
+            loss += F.mse_loss(module.E_train_mask * E, m * E, reduction='mean').to(loss.device)
+        else:
+            loss += F.mse_loss(module.E_train_mask * E, m * E, reduction='mean')
 
     loss = loss/len(compression_calculator.lowrank_layers)
     return loss
@@ -320,7 +332,12 @@ def calculate_R_loss(compression_calculator, target_param_ratio:int):
     total_new_params = 0. 
     total_orignal_params = 0.
     for module in compression_calculator.lowrank_layers: 
-        total_new_params += (module.in_features + module.out_features) * module.E_train_mask.sum()
+        mask_sum = module.E_train_mask.sum()
+
+        if isinstance(total_new_params, torch.Tensor): 
+            mask_sum = mask_sum.to(total_new_params.device) # for multigpu
+    
+        total_new_params += (module.in_features + module.out_features) * mask_sum
         total_orignal_params += (module.in_features * module.out_features)
 
     target_params = target_param_ratio * total_orignal_params
@@ -334,13 +351,18 @@ def calculate_R_loss(compression_calculator, target_param_ratio:int):
 
 def calculate_R_loss_simple(compression_calculator):
     """
-    Compression regularizer
+    Simple compression regularizer, that minimizes the mean of the mask (not from ASR paper)
     
     """
     loss = 0. 
     for module in compression_calculator.lowrank_layers: 
-        #loss += module.E_train_mask.mean() 
-        loss += module.E_train.mean()
+        mask_mean = module.E_train.mean()
+
+        if isinstance(loss, torch.Tensor): 
+            mask_mean = mask_mean.to(loss.device) # for multigpu
+    
+        loss += mask_mean
+
     return loss/len(compression_calculator.lowrank_layers)
 
 def training_step(model, batch, pad_token_id, args, compression_calculator, is_eval=False):

@@ -168,7 +168,7 @@ class CompressionCalculator:
     def get_sv_ratio(self):
         keep_ratio = 0. 
         for module in self.lowrank_layers:
-            keep_ratio += module.calculate_mask(is_training=True).mean()
+            keep_ratio += module.calculate_mask(is_training=True).mean().item()
 
         return keep_ratio/len(self.lowrank_layers)
 
