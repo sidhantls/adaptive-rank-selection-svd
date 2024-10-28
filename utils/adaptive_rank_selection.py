@@ -32,16 +32,19 @@ class STE(torch.autograd.Function):
         # Backward pass: STE returns the gradient of the original input
         return grad_output
 
-class Hypernetwork(nn.Module):
-    def __init__(self, num_singular_values, input_size, hidden_size):
-        super(Hypernetwork, self).__init__()
+class Hypernet_GRU(nn.Module):
+    """
+    Part 1 of the hypernet, the GRU network, which is a global layer: one for the entire network 
+    
+    """
+    def __init__(self, num_layers, input_size, hidden_size):
+        super(Hypernet_GRU, self).__init__()
         
         self.bi_gru = nn.GRU(input_size, hidden_size, batch_first=True, bidirectional=True)
         self.layer_norm = nn.LayerNorm(hidden_size * 2)
         self.activation = nn.GELU()
-        self.linear = nn.Linear(hidden_size * 2, 1)
         #self.z = torch.randn(1, num_singular_values, input_size)  # Normal distribution input
-        self.z = torch.nn.Parameter(torch.randn(1, num_singular_values, input_size)) # use nn.param for device and type consistency
+        self.z = torch.nn.Parameter(torch.randn(1, num_layers, input_size)) # use nn.param for device and type consistency
         self.z.requires_grad=False
 
     def forward(self):
@@ -52,8 +55,7 @@ class Hypernetwork(nn.Module):
         self.z.requires_grad=False 
         out, _ = self.bi_gru(self.z)
         out = self.layer_norm(out)
-        out = self.activation(out)
-        out = self.linear(out)[0, :, 0]
+        out = self.activation(out)[0, :, :]
         return out
     
 class LowrankLinear(torch.nn.Module):
@@ -109,10 +111,11 @@ class LowrankLinear(torch.nn.Module):
         self.E = E
         self.E.requires_grad=False
 
-        self.E_train = Hypernetwork(len(self.E), 32, 64)
+        # 128 is hidden_dim of Bi-GRU
+        self.E_train = nn.Linear(128, len(self.E)) 
         self.tau = tau
-        self.use_stored_masks = False
-        self.E_train_mask = None 
+        self.global_hypernet_state = None
+        self.E_train_mask = None
 
     def forward(self, inputs):
         """
@@ -153,9 +156,11 @@ class LowrankLinear(torch.nn.Module):
         Returns:
             torch.Tensor: Mask for singular value selection.
         """
-
+        if isinstance(self.global_hypernet_state, type(None)):
+            raise TypeError("Expected self.global_hypernet_state to be of type tensor in LowrankLinear")
+        
         if is_training or self.E_train_mask is None:
-            logit_mask = self.E_train() + self.b
+            logit_mask = self.E_train(self.global_hypernet_state) + self.b
             E_train_mask = gumbel_sigmoid(logit_mask, tau=self.tau)
             E_train_mask = STE.apply(E_train_mask)
             self.E_train_mask = E_train_mask
@@ -438,3 +443,17 @@ def freeze_model_masks(model, should_freeze=True):
     for _, module in model.named_modules():
         if 'Lowrank' in str(module)[:7]:
             module.use_stored_masks = should_freeze
+
+class HypernetOperator:
+    """
+    Handles other operations required for hypenetwork
+    """
+    def __init__(self, lowrank_layers):
+        self.L = len(lowrank_layers)
+        self.hypernet = Hypernet_GRU(self.L, 32, 64)
+        self.lowrank_layers = lowrank_layers
+
+    def update_network_with_sv_hidden_state(self):
+        hidden = self.hypernet()
+        for i in range(self.L):
+            self.lowrank_layers[i].global_hypernet_state = hidden[i, :]
