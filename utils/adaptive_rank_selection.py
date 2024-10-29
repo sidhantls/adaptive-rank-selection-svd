@@ -160,7 +160,7 @@ class LowrankLinear(torch.nn.Module):
             raise TypeError("Expected self.global_hypernet_state to be of type tensor in LowrankLinear")
         
         if is_training or self.E_train_mask is None:
-            logit_mask = self.E_train(self.global_hypernet_state.to(self.E_train.weight.device) + self.b
+            logit_mask = self.E_train(self.global_hypernet_state.to(self.E_train.weight.device)) + self.b
             E_train_mask = gumbel_sigmoid(logit_mask, tau=self.tau)
             E_train_mask = STE.apply(E_train_mask)
             self.E_train_mask = E_train_mask
