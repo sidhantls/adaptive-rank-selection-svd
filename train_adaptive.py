@@ -232,7 +232,6 @@ if not args.debug:
 eval_at_95 = True
 
 print('Starting training..')
-counter = 0
 for epoch in range(args.epochs):
     model = model.train()
     epoch_loss = 0.0
@@ -244,7 +243,6 @@ for epoch in range(args.epochs):
             if args.layer_type=='adaptive':
                 hypernet_operator.update_network_with_sv_hidden_state() # calculate hypernet hidden state
 
-            # old_hidden_validate = hypernet_operator.hypernet.bi_gru.weight_hh_l0.clone() # validate if model is being update
             loss, logits_loss, r_align_loss, r_loss, perplexity, keep_ratio, current_param_ratio, lambda_scale = adaptive_rank_selection.training_step(model, batch, tokenizer.pad_token_id, args, compression_calculator)
 
         scaler.scale(loss).backward()
@@ -252,11 +250,6 @@ for epoch in range(args.epochs):
         scaler.step(optimizer)
         scaler.update()
         optimizer.zero_grad(set_to_none=True)
-
-        # new_hidden_validate = hypernet_operator.hypernet.bi_gru.weight_hh_l0 # validate if model is being update
-        # if torch.allclose(old_hidden_validate.to(new_hidden_validate.dtype), new_hidden_validate, rtol=1e-05):
-        #     counter += 1
-        #     print('Model has not been updated ', counter)
     
         # Combining all metrics into one dictionary and logging with wandb in one line
         metrics = {
