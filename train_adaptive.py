@@ -3,6 +3,7 @@ import json
 import os
 import pickle
 import time
+import itertools
 
 import pdb
 import torch
@@ -202,7 +203,11 @@ train_utils.print_nvidia_smi()
 # singular value selection parameters, required for loss
 compression_params = lowrank_modeling.get_compression_layers(model)
 
-optimizer = Adam(model.parameters(), lr=args.lr)
+gru_hypernet_params = [] 
+if args.layer_type=='adaptive':
+    gru_hypernet_params = hypernet_operator.hypernet.parameters() # add to optimizer params 
+
+optimizer = Adam(itertools.chain(model.parameters(), gru_hypernet_params), lr=args.lr)
 #optimizer = Adam(model.parameters(), lr=args.lr)
 
 # Training loop
@@ -227,6 +232,7 @@ if not args.debug:
 eval_at_95 = True
 
 print('Starting training..')
+counter = 0
 for epoch in range(args.epochs):
     model = model.train()
     epoch_loss = 0.0
@@ -237,7 +243,8 @@ for epoch in range(args.epochs):
         with torch.autocast(device_type=model.device.type, dtype=train_precision, enabled=use_amp):
             if args.layer_type=='adaptive':
                 hypernet_operator.update_network_with_sv_hidden_state() # calculate hypernet hidden state
-        
+
+            # old_hidden_validate = hypernet_operator.hypernet.bi_gru.weight_hh_l0.clone() # validate if model is being update
             loss, logits_loss, r_align_loss, r_loss, perplexity, keep_ratio, current_param_ratio, lambda_scale = adaptive_rank_selection.training_step(model, batch, tokenizer.pad_token_id, args, compression_calculator)
 
         scaler.scale(loss).backward()
@@ -246,6 +253,11 @@ for epoch in range(args.epochs):
         scaler.update()
         optimizer.zero_grad(set_to_none=True)
 
+        # new_hidden_validate = hypernet_operator.hypernet.bi_gru.weight_hh_l0 # validate if model is being update
+        # if torch.allclose(old_hidden_validate.to(new_hidden_validate.dtype), new_hidden_validate, rtol=1e-05):
+        #     counter += 1
+        #     print('Model has not been updated ', counter)
+    
         # Combining all metrics into one dictionary and logging with wandb in one line
         metrics = {
             "train/loss": loss.item(),
@@ -284,7 +296,6 @@ for epoch in range(args.epochs):
 
         window_size = 100 # continue training for X more steps after target is reached
         current_mean = np.mean(param_ratios[-window_size:])
-        if args.layer_type=='simple': window_size=100 # forward pass is faster and takes longer to converge
         is_compression_reached = len(param_ratios) > window_size and current_mean - args.target_param_ratio < 0.0030
  
         # if pre-training mode, early stop after 5% more steps if performance is constant
