@@ -94,9 +94,9 @@ parser.add_argument("--beta_scale", type=float, default=1., help="Scale factor f
 
 parser.add_argument("--p_param", type=float, default=0.4, help="Param for compression loss")
 
-parser.add_argument("--layer_type", type=str, default='adaptive', help="Choice of HyperNetwork", choices=['adaptive', 'simple'])
+parser.add_argument("--layer_type", type=str, default='adaptive', help="Choice of HyperNetwork", choices=['adaptive', 'simple', 'struct_pruning'])
 
-parser.add_argument("--r_loss", type=str, default='default', help="Loss function to use for compression", choices=['default', 'simple'])
+parser.add_argument("--r_loss", type=str, default='default', help="Loss function to use for compression", choices=['default', 'simple', 'struct_pruning'])
 
 args = parser.parse_args()
 

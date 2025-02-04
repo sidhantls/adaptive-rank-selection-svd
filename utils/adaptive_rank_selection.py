@@ -7,6 +7,7 @@ import torch.nn.functional as F
 import pdb
 from collections import defaultdict
 from tqdm import tqdm 
+import math
 
 def gumbel_sigmoid(logits, tau=0.5):
     """Apply Gumbel Sigmoid to logits"""
@@ -306,7 +307,7 @@ class LowrankLinearSimple(torch.nn.Module):
 
     def __repr__(self):
         return self.__str__()
-    
+
 def calculate_r_align(compression_calculator):
     """
     Loss to align learned mask to singular value properties
@@ -370,6 +371,48 @@ def calculate_R_loss_simple(compression_calculator):
 
     return loss/len(compression_calculator.lowrank_layers)
 
+def calculate_R_loss_struct_pruning(compression_calculator):
+    """
+    Simple compression regularizer, that minimizes the mean of the mask (not from ASR paper)
+    
+    """
+    loss = 0. 
+    for module in compression_calculator.lowrank_layers: 
+        mask_mean = module.masking_layer.l0_norm()/module.rank # normalize with rank
+
+        if isinstance(loss, torch.Tensor): 
+            mask_mean = mask_mean.to(loss.device) # for multigpu
+    
+        loss += mask_mean
+
+    return loss/len(compression_calculator.lowrank_layers)
+
+class LowrankLinearStructPruning(LowrankLinearSimple):
+    def __init__(self, current_layer, svd_vector, alpha=1., niter=2, tau=0.4):
+        # Call the parent class's constructor
+        super(LowrankLinearStructPruning, self).__init__(current_layer, svd_vector, alpha, niter, tau)
+        self.masking_layer = HardConcrete(self.rank, init_mean=0.001) # sets entire mask to 1 
+        self.E_train = self.masking_layer.E_train 
+    
+    def calculate_mask(self, is_training, return_topk=False):
+        """
+        Custom implementation of the mask calculation.
+        """
+
+        E_train_mask = self.masking_layer()
+        # E_train_mask = STE.apply(E_train_mask) # ST estimator not used in paper
+        
+        if not is_training: 
+            E_train_mask = E_train_mask > 0.5
+            topk_mask = torch.zeros_like(E_train_mask, device=E_train_mask.device, requires_grad=False)
+            topk_mask[:E_train_mask.sum().item()] = 1.
+            return topk_mask
+
+        return E_train_mask
+
+    def __str__(self):
+        return f"LowrankLinearStructPruning(in_features={self.in_features}, out_features={self.out_features}, rank={self.rank})"
+
 def training_step(model, batch, pad_token_id, args, compression_calculator, is_eval=False):
     """
     One training step of model
@@ -399,6 +442,8 @@ def training_step(model, batch, pad_token_id, args, compression_calculator, is_e
         r_loss = calculate_R_loss(compression_calculator, args.p_param)
     elif args.r_loss == 'simple':
         r_loss = calculate_R_loss_simple(compression_calculator)
+    elif args.r_loss == 'struct_pruning':
+        r_loss = calculate_R_loss_struct_pruning(compression_calculator)
 
     with torch.no_grad():
         current_param_ratio, keep_ratio = compression_calculator.get_compression_and_sv()
@@ -457,3 +502,125 @@ class HypernetOperator:
         hidden = self.hypernet()
         for i in range(self.L):
             self.lowrank_layers[i].global_hypernet_state = hidden[i, :]
+
+
+class HardConcrete(nn.Module):
+    """A HarcConcrete module.
+
+    Use this module to create a mask of size N, which you can
+    then use to perform L0 regularization. Note that in general,
+    we also provide utilities which introduce HardConrete modules
+    in the desired places in your model. See ``utils`` for details.
+
+    To obtain a mask, simply run a forward pass through the module
+    with no input data. The mask is sampled in training mode, and
+    fixed during evaluation mode:
+
+    >>> module = HardConcrete(n_in=100)
+    >>> mask = module()
+    >>> norm = module.l0_norm()
+
+    Reference: https://github.com/asappresearch/flop/blob/e80e47155de83abbe7d90190e00d30bfb85c18d5/flop/hardconcrete.py
+
+    """
+
+    def __init__(self,
+                 n_in: int,
+                 init_mean: float = 0.5,
+                 init_std: float = 0.01,
+                 temperature: float = 1.0,
+                 stretch: float = 0.1,
+                 eps: float = 1e-6) -> None:
+        """Initialize the HardConcrete module.
+
+        Parameters
+        ----------
+        n_in : int
+            The number of hard concrete variables in this mask.
+        init_mean : float, optional
+            Initialization value for hard concrete parameter,
+            by default 0.5.,
+        init_std: float, optional
+            Used to initialize the hard concrete parameters,
+            by default 0.01.
+        temperature : float, optional
+            Temperature used to control the sharpness of the
+            distribution, by default 1.0
+        stretch : float, optional
+            Stretch the sampled value from [0, 1] to the interval
+            [-stretch, 1 + stretch], by default 0.1.
+
+        """
+        super().__init__()
+
+        self.n_in = n_in
+        self.limit_l = -stretch
+        self.limit_r = 1.0 + stretch
+        self.log_alpha = nn.Parameter(torch.zeros(n_in))  # type: ignore
+        self.E_train = self.log_alpha # compatibilitty
+        self.beta = temperature
+        self.init_mean = init_mean
+        self.init_std = init_std
+        self.bias = -self.beta * math.log(-self.limit_l / self.limit_r)
+
+        self.eps = eps
+        self.compiled_mask = None
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        """Reset the parameters of this module."""
+        self.compiled_mask = None
+        mean = math.log(1 - self.init_mean) - math.log(self.init_mean)
+        self.log_alpha.data.normal_(mean, self.init_std)
+
+    def l0_norm(self) -> torch.Tensor:
+        """Compute the expected L0 norm of this mask.
+
+        Returns
+        -------
+        torch.Tensor
+            The expected L0 norm.
+
+        """
+        return (self.log_alpha + self.bias).sigmoid().sum()
+
+    def forward(self) -> torch.Tensor:  # type: ignore
+        """Sample a harconcrete mask.
+
+        Returns
+        -------
+        torch.Tensor
+            The sampled binary mask
+
+        """
+        if self.training:
+            # Reset the compiled mask
+            self.compiled_mask = None
+            # Sample mask dynamically
+            u = self.log_alpha.new(self.n_in).uniform_(self.eps, 1 - self.eps)  # type: ignore
+            s = F.sigmoid((torch.log(u / (1 - u)) + self.log_alpha) / self.beta)
+            s = s * (self.limit_r - self.limit_l) + self.limit_l
+            mask = s.clamp(min=0., max=1.)
+
+        else:
+            # Compile new mask if not cached
+            if self.compiled_mask is None:
+                # Get expected sparsity
+                expected_num_zeros = self.n_in - self.l0_norm().item()
+                num_zeros = round(expected_num_zeros)
+                # Approximate expected value of each mask variable z;
+                # We use an empirically validated magic number 0.8
+                soft_mask = F.sigmoid(self.log_alpha / self.beta * 0.8)
+                # Prune small values to set to 0
+                _, indices = torch.topk(soft_mask, k=num_zeros, largest=False)
+                soft_mask[indices] = 0.
+                self.compiled_mask = soft_mask
+            mask = self.compiled_mask
+
+        return mask
+
+    def extre_repr(self) -> str:
+        return str(self.n_in)
+
+    def __repr__(self) -> str:
+        return "{}({})".format(self.__class__.__name__, self.extre_repr())

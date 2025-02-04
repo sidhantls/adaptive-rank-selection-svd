@@ -52,6 +52,8 @@ def replace_with_lowrank_linear(model, args, svd_info={}):
                 new_module = adaptive_rank_selection.LowrankLinearSimple(module, svd_vector, alpha=args.alpha, niter=2, tau=args.tau)
             elif args.layer_type == 'adaptive':
                 new_module = adaptive_rank_selection.LowrankLinear(module, svd_vector, alpha=args.alpha, niter=2, tau=args.tau)
+            elif args.layer_type == 'struct_pruning':
+                new_module = adaptive_rank_selection.LowrankLinearStructPruning(module, svd_vector, alpha=args.alpha, niter=2, tau=args.tau)
             else:
                 raise NotImplementedError(f"Unsupported layer_type {args.layer_type} in replace_linear_with_svd")
 
