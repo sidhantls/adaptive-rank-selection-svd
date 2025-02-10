@@ -113,7 +113,7 @@ torch.backends.cudnn.deterministic = True  # Ensure deterministic behavior for C
 if args.debug: 
     os.environ["WANDB_MODE"] = "offline"
 
-wandb_writer = wandb.init(project="learn-to-compress-lrd_final", name=args.exp_name, config=vars(args))
+wandb_writer = wandb.init(project="learn-to-compress-lrd_final2", name=args.exp_name, config=vars(args))
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"using device: {device}")
