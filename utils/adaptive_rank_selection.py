@@ -453,7 +453,7 @@ def training_step(model, batch, pad_token_id, args, compression_calculator, is_e
 
     # if compression is reached, ignore compression regularizer
     lambda_scale = args.lambda_scale
-    if abs(current_param_ratio - args.target_param_ratio) < 0.002: 
+    if current_param_ratio - args.target_param_ratio < 0.002: 
         lambda_scale = 0
 
     loss = args.beta_scale * logits_loss + lambda_scale * r_loss + args.gamma_scale * r_align_loss
