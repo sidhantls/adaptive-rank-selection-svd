@@ -83,7 +83,7 @@ def evaluate_with_harness_full(model, tokenizer, device, debug=False, batch_size
 
     results1 = simple_evaluate( # call simple_evaluate
             model=lm_obj,
-            tasks=["hellaswag", "winogrande", "arc_easy", "arc_challenge", "piqa", "boolq", "openbookqa"],
+            tasks=["piqa", "boolq", "openbookqa"],
             num_fewshot=0,
             limit=limit1,
             batch_size=batch_size,
