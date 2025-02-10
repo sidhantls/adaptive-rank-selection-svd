@@ -9,7 +9,7 @@ lambda_scale=1
 gamma_scale=0 # allignment loss
 beta_scale=1.0
 layer_type="struct_pruning"
-r_loss="struct_pruning""
+r_loss="struct_pruning"
 
 # Construct exp_name
 exp_name="${MODEL##*/}_lambda${lambda_scale}_gamma${gamma_scale}_beta${beta_scale}_${layer_type}"
