@@ -72,7 +72,7 @@ parser.add_argument('--eval_full', action='store_true', default=False, help='Run
 
 parser.add_argument("--act_aware", type=str, default='', help='Loss/activation aware SVD', choices=['', 'fisher', 'activation'])
 
-parser.add_argument("--alpha", type=float, default=1., help="Alpha hyperparameter for act_aware")
+parser.add_argument("--alpha", type=float, default=0.5, help="Alpha hyperparameter for act_aware")
 
 parser.add_argument("--target_param_ratio", type=float, help="Target compression", required=True)
 
