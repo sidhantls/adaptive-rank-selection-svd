@@ -378,7 +378,8 @@ def calculate_R_loss_struct_pruning(compression_calculator):
     """
     loss = 0. 
     for module in compression_calculator.lowrank_layers: 
-        mask_mean = module.masking_layer.l0_norm()/module.rank # normalize with rank
+        #mask_mean = module.masking_layer.l0_norm()/module.rank # normalize with rank
+        mask_mean = module.masking_layer.l0_norm()
 
         if isinstance(loss, torch.Tensor): 
             mask_mean = mask_mean.to(loss.device) # for multigpu
