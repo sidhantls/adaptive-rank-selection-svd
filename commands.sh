@@ -18,7 +18,7 @@ exp_name="${MODEL##*/}_ratio${RATIO}_lambda${lambda_scale}_gamma${gamma_scale}_b
 
 # Define arrays for loops
 MODELS=("meta-llama/Llama-2-7b-hf" "Llama-3.1-8B" "google/gemma-7b")
-RATIOS=(0.9, 0.85, 0.80)
+RATIOS=(0.90 0.85 0.80)
 
 # Nested loops for MODEL and RATIO
 for MODEL in "${MODELS[@]}"; do
