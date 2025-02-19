@@ -25,7 +25,7 @@ SAVE_MODEL_TYPE=""
 for MODEL in "${MODELS[@]}"; do
     for RATIO in "${RATIOS[@]}"; do
         # Construct exp_name
-        exp_name="${MODEL##*/}_ratio${RATIO}_lambda${lambda_scale}_gamma${gamma_scale}_beta${beta_scale}_${layer_type}"
+        exp_name="${MODEL##*/}_ratio${RATIO}_lambda${lambda_scale}_gamma${gamma_scale}_beta${beta_scale}_${layer_type}_nopost"
         
         echo "Running experiment with MODEL=$MODEL and RATIO=$RATIO"
         
