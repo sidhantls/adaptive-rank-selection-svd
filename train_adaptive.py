@@ -76,7 +76,7 @@ parser.add_argument("--alpha", type=float, default=0.5, help="Alpha hyperparamet
 
 parser.add_argument("--target_param_ratio", type=float, help="Target compression", required=True)
 
-parser.add_argument('--save_model', type=str, default='reconstruct',  help='Method to save model', choices=['reconstruct', 'use_mask', ""])
+parser.add_argument('--save_model', type=str, default='reconstruct',  help='Method to save model', choices=['reconstruct', 'use_mask', "always_mask"])
 
 parser.add_argument('--load_act_cache', action='store_true', default=False, help='Loads activation cache')
 
@@ -348,7 +348,7 @@ if args.save_model:
         json.dump(compression_map, f)
     wandb.Artifact(name="compression_map", type="dataset").add_file(os.path.join(model_path, 'compression_map.json'))
     
-    model, lowrank_config = convert_model.replace_with_compressed_layer(model)
+    model, lowrank_config = convert_model.replace_with_compressed_layer(model, args)
 
     num_params_new = train_utils.count_parameters(model)
     compression_stats = { "compression_stats/new_params_billion": num_params_new, "compression_stats/old_params_billion": num_params_old, "compression_stats/compression_ratio": num_params_new / num_params_old }
@@ -362,8 +362,7 @@ if args.save_model:
     model = model.half()
     model.save_pretrained(model_path)
     print(f'Model save: {model_path}')
-else:
-    print("\n\nNot using custom post-processing technique\n\n")
+
 
 # evaluate the final model as well
 if args.eval_full:
