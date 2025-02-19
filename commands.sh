@@ -18,8 +18,8 @@ exp_name="${MODEL##*/}_ratio${RATIO}_lambda${lambda_scale}_gamma${gamma_scale}_b
 
 # Define arrays for loops
 MODELS=("meta-llama/Llama-2-7b-hf" "meta-llama/Meta-Llama-3-8B" "google/gemma-7b")
-MODELS=("meta-llama/Meta-Llama-3-8B" "google/gemma-7b")
 RATIOS=(0.90 0.85 0.80)
+SAVE_MODEL_TYPE=""
 
 # Nested loops for MODEL and RATIO
 for MODEL in "${MODELS[@]}"; do
@@ -29,6 +29,6 @@ for MODEL in "${MODELS[@]}"; do
         
         echo "Running experiment with MODEL=$MODEL and RATIO=$RATIO"
         
-        python train_adaptive.py --model_name=$MODEL --batch_size=$BS --num_train_samples=$TRAIN_SAMPLES --max_length=256 --lr=$lr --eval_freq_steps=2000 --exp_name=$exp_name --cache_dir=$cache_dir --eval_full --act_aware="activation" --target_param_ratio=$RATIO --lambda_scale=$lambda_scale --gamma_scale=$gamma_scale --layer_type=$layer_type --r_loss=$r_loss --beta_scale=$beta_scale
+        python train_adaptive.py --model_name=$MODEL --save_model=$SAVE_MODEL_TYPE --batch_size=$BS --num_train_samples=$TRAIN_SAMPLES --max_length=256 --lr=$lr --eval_freq_steps=2000 --exp_name=$exp_name --cache_dir=$cache_dir --eval_full --act_aware="activation" --target_param_ratio=$RATIO --lambda_scale=$lambda_scale --gamma_scale=$gamma_scale --layer_type=$layer_type --r_loss=$r_loss --beta_scale=$beta_scale
     done
 done
