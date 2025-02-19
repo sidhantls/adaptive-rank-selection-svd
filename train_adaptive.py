@@ -362,6 +362,8 @@ if args.save_model:
     model = model.half()
     model.save_pretrained(model_path)
     print(f'Model save: {model_path}')
+else:
+    print("\n\nNot using custom post-processing technique\n\n")
 
 # evaluate the final model as well
 if args.eval_full:
