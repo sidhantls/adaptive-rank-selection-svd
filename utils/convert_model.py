@@ -22,7 +22,7 @@ def get_mapping_dict(compression_stats):
     return mapping, mapping_to_masks
 
 
-def convert_linear_to_compressed(module):
+def convert_linear_to_compressed(module, args):
     """
     Convert the low-rank linear model used in training to a compressed model, to be used during evalution 
     """
@@ -33,12 +33,14 @@ def convert_linear_to_compressed(module):
 
     E_train_mask = E_train_mask.to(module.UE.device).bool() 
 
-    # if compression is achieved, create lowrank layer 
-    if compression_ratio < 1.:
+    if compression_ratio < 1. or args.save_model == "always_mask":
         UE = module.UE[:, E_train_mask]
         V_t = module.V_t[E_train_mask, :]
         new_module = LinearLowRank(UE, V_t)
-    
+
+        if args.save_model == "always_mask": 
+            print("args.save_model has been set to always_mask, use mask always")
+        
     else: 
         print(f'Compress not achieved for module ignore low-rank conversion:{module}')
         W_new = module.UE @ module.V_t
@@ -87,7 +89,7 @@ class LinearLowRank(torch.nn.Module):
         return self.__str__()
     
 
-def replace_with_compressed_layer(model):
+def replace_with_compressed_layer(model, args):
     """
     Replace all the low-rank decomposed full-rank layers with layers that only contain the selected singular values.
 
@@ -117,7 +119,7 @@ def replace_with_compressed_layer(model):
         if module in linear_info:
             info = linear_info[module]
 
-            compressed_module, r = convert_linear_to_compressed(module)
+            compressed_module, r = convert_linear_to_compressed(module, args)
 
             setattr(info["father"], info["name"], compressed_module)
 
