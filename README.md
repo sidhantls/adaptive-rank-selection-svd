@@ -49,7 +49,7 @@ GAMMA=1.
 # Loop over the COMP values
 for i in ${!COMP_VALUES[@]}; do
     COMP=${COMP_VALUES[$i]}
-    EXP_NAME="${MODEL#*/}_${LTYPE}_${COMP}_fixmse_${GAMMA}_${LAMBDA}"
+    EXP_NAME="${MODEL#*/}_${LTYPE}_${COMP}_${GAMMA}_${LAMBDA}"
     p_param=0.4
     # Check if it's the first iteration
     if [ $i -eq 0 ]; then
