@@ -14,7 +14,6 @@ from torch.optim import Adam
 from tqdm import tqdm
 
 from transformers import (
-    AdamW,
     AutoModel,
     AutoModelForCausalLM,
     AutoTokenizer,
@@ -33,6 +32,7 @@ from utils.data_utils import get_dataloaders
 
 import numpy as np
 from utils import adaptive_rank_selection
+from torch.optim import AdamW
 
 parser = argparse.ArgumentParser(description="Transformer model training and evaluation")
 
