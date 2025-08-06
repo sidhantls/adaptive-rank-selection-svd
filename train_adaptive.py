@@ -37,6 +37,9 @@ parser = argparse.ArgumentParser(description="Transformer model training and eva
 parser.add_argument("--model_name", type=str, default="TinyLlama/TinyLlama-1.1B-Chat-v1.0",
                     help="The name or path of the pre-trained model to use.")
 
+parser.add_argument("--epochs", type=int, default=1,
+                    help="Number of epochs to train the model")
+
 parser.add_argument("--batch_size", type=int, default=2,
                     help="Batch size for model")
 
@@ -99,7 +102,7 @@ parser.add_argument("--r_loss", type=str, default='default', help="Loss function
 args = parser.parse_args()
 
 # constant
-args.epochs=1
+# args.epochs=1
 
 os.makedirs(args.cache_dir, exist_ok=True)
 
