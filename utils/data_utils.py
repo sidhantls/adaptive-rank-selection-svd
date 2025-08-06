@@ -16,74 +16,78 @@ def set_random_state(seed):
     torch.manual_seed(seed)
     np.random.seed(seed)
 
-
-def sample_documents_from_dataset_packing(dataset, args):
+def sample_documents_from_dataset_packing(
+        dataset,
+        args
+):
     """
-    Samples a specified number of documents from a dataset for training and testing.
+    Faster version – O(N) over documents.
 
-    Args:
-        dataset (list[str]): A list of documents (strings) from which to sample.
-        num_train_samples: The number of samples to include in the training set. Defaults to 128.
-        num_test_samples: The number of samples to include in the test set. Defaults to 128.
-        max_len: The maximum tokens of the sampled documents. Defaults to 512.
-
-    Returns:
-        train and testing documents, each of which are list of strings
+    • Pre-tokenises every document once.
+    • Walks through the corpus sequentially, never re-visiting docs.
+    • Stops as soon as the exact number of packed samples required
+      (plus a *small* buffer) is reached.
     """
-
-    new_dataset = []
-    left, right = 0, 1
-
-    if len(dataset) == 0:
+    if not dataset:
         raise ValueError("Dataset is empty.")
 
-    document = dataset[left]
-    document_tokens = document.split()
+    # ---------- 1. Pre-tokenise once ----------
+    tokenised = [doc.split() for doc in dataset]          # O(total_tokens)
+    # Filter out tiny docs now (saves work later)
+    tokenised = [toks for toks in tokenised if len(toks) >= 100]
 
-    # Target number to collect (multiplied by 5 for more candidates)
-    target_num = (args.num_train_samples + args.num_test_samples) * 5
+    rng = random.Random(args.seed)
 
-    while len(new_dataset) < target_num and right < len(dataset):
-        right_doc = dataset[right]
-        right_doc_tokens = right_doc.split()
+    # ---------- 2. Shuffle once for randomness ----------
+    rng.shuffle(tokenised)
 
-        # Skip documents with less than 100 words
-        if len(right_doc_tokens) < 100:
-            right += 1
-            continue
+    # ---------- 3. Sequential packing ----------
+    packed_docs: List[str] = []
+    current: List[str] = []
 
-        # Append right_doc tokens and update document_tokens
-        document_tokens.extend(right_doc_tokens)
+    needed = args.num_train_samples + args.num_test_samples
+    buffer = int(needed * 0.3)            # collect ~30 % extra
+    target = needed + buffer
 
-        # If document_tokens length passes threshold, save and reset
-        if len(document_tokens) >= args.max_length:
-            new_dataset.append(" ".join(document_tokens))
-            left = right + 1
-            right = left + 1
+    for toks in tokenised:
+        # If adding this doc would overflow → flush first
+        if len(current) + len(toks) > args.max_length:
+            if current:                               # avoid empty flush
+                packed_docs.append(" ".join(current))
+                if len(packed_docs) >= target:
+                    break
+            current = []
 
-            if left >= len(dataset):  # No more documents to process
+        current.extend(toks)
+
+        # Edge case: single extremely long doc
+        if len(current) >= args.max_length:
+            packed_docs.append(" ".join(current))
+            if len(packed_docs) >= target:
                 break
+            current = []
 
-            document = dataset[left]
-            document_tokens = document.split()
-        else:
-            right += 1
+    # Flush remainder
+    if current and len(packed_docs) < target:
+        packed_docs.append(" ".join(current))
 
-    if len(new_dataset) < target_num:
-        print(f"Warning: only collected {len(new_dataset)} documents, fewer than requested {target_num}.")
+    if len(packed_docs) < needed:
+        print(f"Warning: collected {len(packed_docs)} packed docs, fewer than "
+              f"requested {needed}. You may need a smaller max_length or more data.")
 
-    new_dataset = list(map(clean_text, new_dataset))
+    # ---------- 4. Clean & split ----------
+    packed_docs = list(map(clean_text, packed_docs))   # your existing cleaner
 
-    # Use train_test_split with explicit sizes and random seed
     train_docs, test_docs = train_test_split(
-        new_dataset,
+        packed_docs,
         train_size=args.num_train_samples,
         test_size=args.num_test_samples,
         random_state=args.seed,
         shuffle=True,
     )
 
-    print(f'Number of train docs: {len(train_docs)}, number of test docs: {len(test_docs)}')
+    print(f"Collected {len(packed_docs)} packed docs "
+          f"(train = {len(train_docs)}, test = {len(test_docs)})")
 
     return train_docs, test_docs
 
