@@ -9,11 +9,9 @@ import torch
 import wandb
 from torch import optim
 from torch.nn.utils import clip_grad_norm_
-from torch.optim import Adam
-from tqdm import tqdm
+from torch.optim import Adam, AdamW
 
 from transformers import (
-    AdamW,
     AutoModel,
     AutoModelForCausalLM,
     AutoTokenizer,
