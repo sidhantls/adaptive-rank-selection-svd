@@ -28,29 +28,61 @@ def sample_documents_from_dataset_packing(dataset, args):
         max_len: The maximum tokens of the sampled documents. Defaults to 512.
 
     Returns:
-        train and testing documents, each of which are lit of strings
+        train and testing documents, each of which are list of strings
     """
-    
-    new_dataset = []
-    left, right = 0, 1 
-    document = dataset[left]
-    while len(new_dataset) < (args.num_train_samples + args.num_test_samples) * 5 and right < len(dataset):
-        if len(dataset[right].split()) < 100: # ignore less than 100 words, minimize the number of different documents 
-            right += 1 
-            continue
-    
-        document = document + ' ' + dataset[right]
 
-        if len(document.split()) >= args.max_length:
-            new_dataset.append(" ".join(document.split()))
-            left = right + 1 
+    new_dataset = []
+    left, right = 0, 1
+
+    if len(dataset) == 0:
+        raise ValueError("Dataset is empty.")
+
+    document = dataset[left]
+    document_tokens = document.split()
+
+    # Target number to collect (multiplied by 5 for more candidates)
+    target_num = (args.num_train_samples + args.num_test_samples) * 5
+
+    while len(new_dataset) < target_num and right < len(dataset):
+        right_doc = dataset[right]
+        right_doc_tokens = right_doc.split()
+
+        # Skip documents with less than 100 words
+        if len(right_doc_tokens) < 100:
+            right += 1
+            continue
+
+        # Append right_doc tokens and update document_tokens
+        document_tokens.extend(right_doc_tokens)
+
+        # If document_tokens length passes threshold, save and reset
+        if len(document_tokens) >= args.max_length:
+            new_dataset.append(" ".join(document_tokens))
+            left = right + 1
             right = left + 1
+
+            if left >= len(dataset):  # No more documents to process
+                break
+
             document = dataset[left]
+            document_tokens = document.split()
         else:
-            right += 1 
+            right += 1
+
+    if len(new_dataset) < target_num:
+        print(f"Warning: only collected {len(new_dataset)} documents, fewer than requested {target_num}.")
 
     new_dataset = list(map(clean_text, new_dataset))
-    train_docs, test_docs = train_test_split(new_dataset, train_size=args.num_train_samples, test_size=args.num_test_samples, random_state=args.seed)
+
+    # Use train_test_split with explicit sizes and random seed
+    train_docs, test_docs = train_test_split(
+        new_dataset,
+        train_size=args.num_train_samples,
+        test_size=args.num_test_samples,
+        random_state=args.seed,
+        shuffle=True,
+    )
+
     print(f'Number of train docs: {len(train_docs)}, number of test docs: {len(test_docs)}')
 
     return train_docs, test_docs
