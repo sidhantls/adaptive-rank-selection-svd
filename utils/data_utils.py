@@ -89,25 +89,25 @@ def sample_documents_from_dataset_packing(dataset, args):
 
 
 def get_dataloaders(
-        tokenizer,
-        args,
-        dataset_name="wikitext2",
-        random_state=42,
-        ):
+    tokenizer,
+    args,
+    dataset_name="wikitext2",
+    random_state=42,
+    ):
     """
     Function to generate PyTorch DataLoaders for training and testing a language model.
 
     Args:
-        tokenizer (Tokenizer): The tokenizer object used to tokenize the text data.
-        dataset_name (str): The name of the dataset. Currently supports 'wikitext2'.
-        num_train_samples (int): Number of samples to use for training.
-        num_test_samples (int): Number of samples to use for testing.
-        batch_size (int): Batch size for DataLoader.
-        random_state (int): Random seed for reproducibility.
+    tokenizer (Tokenizer): The tokenizer object used to tokenize the text data.
+    dataset_name (str): The name of the dataset. Currently supports 'wikitext2'.
+    num_train_samples (int): Number of samples to use for training.
+    num_test_samples (int): Number of samples to use for testing.
+    batch_size (int): Batch size for DataLoader.
+    random_state (int): Random seed for reproducibility.
 
     Returns:
-        train_dataloader (DataLoader): DataLoader for training data.
-        test_dataloader (DataLoader): DataLoader for testing data.
+    train_dataloader (DataLoader): DataLoader for training data.
+    test_dataloader (DataLoader): DataLoader for testing data.
     """
     set_random_state(random_state)
     NUM_CALIB=256
@@ -117,38 +117,55 @@ def get_dataloaders(
         MAX_LEN_CALIB=10
 
     start = time.time()
-    
+    print("Loading dataset...")
     if dataset_name == "wikitext2":
         hf_dataset = load_wikitext(args)
     else:
         raise NotImplementedError('dataset_name not in available list in get_train_dl')
     print(f'Time taken to load datasets {time.time()-start: 0.2f}')
 
-    # use pre-training dataset style with packing
+    print("Sampling documents from dataset...")
+    step_time = time.time()
     train_docs, test_docs = sample_documents_from_dataset_packing(hf_dataset['text'], args)
+    print(f"Sampled documents in {time.time() - step_time:0.2f} seconds.")
 
     if args.debug: 
         args.max_length = 10
         train_docs, test_docs = train_docs[:10], test_docs[:10]
-        
+    
+    print("Tokenizing train documents...")
+    step_time = time.time()
     train_dataset = tokenizer(train_docs, max_length=args.max_length, truncation=True)
-    test_dataset = tokenizer(test_docs, max_length=args.max_length, truncation=True)
+    print(f"Tokenized train docs in {time.time() - step_time:0.2f} seconds.")
 
-    # calib_dataset = tokenizer(train_docs[:NUM_CALIB], max_length=args.max_length, truncation=True)
+    print("Tokenizing test documents...")
+    step_time = time.time()
+    test_dataset = tokenizer(test_docs, max_length=args.max_length, truncation=True)
+    print(f"Tokenized test docs in {time.time() - step_time:0.2f} seconds.")
+
+    print("Preparing calibration data...")
+    step_time = time.time()
     calib_docs = get_calib_data(args, NUM_CALIB)
     calib_dataset = tokenizer(calib_docs, max_length=MAX_LEN_CALIB, truncation=True)
+    print(f"Prepared calibration data in {time.time() - step_time:0.2f} seconds.")
 
+    print("Converting to HuggingFace Datasets...")
+    step_time = time.time()
     train_dataset = Dataset.from_dict(train_dataset)
     test_dataset = Dataset.from_dict(test_dataset)
     calib_dataset = Dataset.from_dict(calib_dataset)
+    print(f"Converted to datasets in {time.time() - step_time:0.2f} seconds.")
 
+    print("Creating DataLoaders...")
+    step_time = time.time()
     data_collator = DataCollatorWithPadding(tokenizer=tokenizer)
 
-    # Create PyTorch DataLoaders
     train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, collate_fn=data_collator, shuffle=False)
     test_dataloader = DataLoader(test_dataset, batch_size=args.batch_size, collate_fn=data_collator, shuffle=False)
     calib_loader = DataLoader(calib_dataset, batch_size=1, collate_fn=data_collator, shuffle=False)
+    print(f"Created DataLoaders in {time.time() - step_time:0.2f} seconds.")
 
+    print("All steps completed.")
     return train_dataloader, test_dataloader, calib_loader
 
 def get_calib_data(args, nsamples, seqlen=2048, seed=3):
