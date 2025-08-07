@@ -387,12 +387,14 @@ def training_step(model, batch, pad_token_id, args, compression_calculator, is_e
     if is_eval: 
         return None, logits_loss, None, None, perplexity, None, None, None
 
-    
-    r_align_loss = calculate_r_align(compression_calculator)
+    if args.method in ['slr_am']:
+        r_align_loss = torch.tensor(0., device=logits_loss.device)
+    else:
+        r_align_loss = calculate_r_align(compression_calculator)
     
     if args.r_loss == 'default': 
         r_loss = calculate_R_loss(compression_calculator, args.p_param)
-    elif args.r_loss == 'simple':
+    elif args.r_loss in ['simple', "slr_am"]:
         r_loss = calculate_R_loss_simple(compression_calculator)
 
     with torch.no_grad():
