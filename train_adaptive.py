@@ -219,6 +219,17 @@ is_compression_reached = False
 #     wandb.log({**harness_metrics, 'step': 0})
 #     model = model.train()
 
+# evaluate the final model as well
+if args.eval_full:
+    if torch.cuda.is_available(): model = model.cuda()
+    model = model.eval(); 
+
+    harness_metrics_full = eval_utils.evaluate_with_harness_full(model, tokenizer, device, debug=args.debug, batch_size=args.eval_batch_size)
+    harness_metrics_full = {'final_' + k: v for k, v in harness_metrics_full.items()}
+    wandb.log({**harness_metrics_full, 'step': global_step})
+    print('Final harness results: \n', harness_metrics_full, '\n')
+
+
 # flag, do one eval at 5% compression
 eval_at_95 = True
 
