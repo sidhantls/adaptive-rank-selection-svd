@@ -3,6 +3,7 @@ from tqdm import tqdm
 import pdb
 from utils import train_utils
 from utils import adaptive_rank_selection
+from utils.slr_am_layer import LowrankLinearSimpleSLR
 
 
 def replace_with_lowrank_linear(model, args, svd_info={}):
@@ -50,6 +51,17 @@ def replace_with_lowrank_linear(model, args, svd_info={}):
 
             if args.layer_type == 'simple':
                 new_module = adaptive_rank_selection.LowrankLinearSimple(module, svd_vector, alpha=args.alpha, niter=2, tau=args.tau)
+            elif args.layer_type == 'simple2':
+                new_module = LowrankLinearSimpleSLR(
+                    module, 
+                    svd_vector, 
+                    alpha=args.alpha, 
+                    niter=2, 
+                    tau=args.tau,
+                    k_sparse_ratio=args.k_sparse_ratio,
+                    mu=args.slr_mu,
+                    lambda_reg=args.slr_lambda
+                )
             elif args.layer_type == 'adaptive':
                 new_module = adaptive_rank_selection.LowrankLinear(module, svd_vector, alpha=args.alpha, niter=2, tau=args.tau)
             else:
@@ -109,11 +121,43 @@ def get_compression_metadata(model):
 
         mask = module.calculate_mask(is_training=False)
         r = int(round(mask.sum().item()))
-        param_ratio = r * (module.in_features + module.out_features) / (module.in_features * module.out_features)
-
-        compression_logs.append({'layer_idx': layer_idx, 'layer_name': layer_name, 'param_ratio': param_ratio, 'in_features': module.in_features, 'out_features': module.out_features, 
-                                 'length': len(mask), 'topk': r, 'mask': mask.tolist()}
-                                 )
+        
+        # Check if this is an SLR_AM layer (has sparse component)
+        has_sparse = hasattr(module, 'sparse')
+        
+        if has_sparse:
+            # Count non-zero elements in sparse component
+            sparse_nnz = torch.count_nonzero(module.sparse).item()
+            # Calculate parameter ratio including sparse component
+            param_ratio = (r * (module.in_features + module.out_features) + sparse_nnz) / (module.in_features * module.out_features)
+            
+            compression_logs.append({
+                'layer_idx': layer_idx, 
+                'layer_name': layer_name, 
+                'param_ratio': param_ratio, 
+                'in_features': module.in_features, 
+                'out_features': module.out_features,
+                'length': len(mask), 
+                'topk': r, 
+                'mask': mask.tolist(),
+                'sparse_nnz': sparse_nnz,
+                'has_sparse': True
+            })
+        else:
+            # Standard calculation for regular low-rank layer
+            param_ratio = r * (module.in_features + module.out_features) / (module.in_features * module.out_features)
+            
+            compression_logs.append({
+                'layer_idx': layer_idx, 
+                'layer_name': layer_name, 
+                'param_ratio': param_ratio, 
+                'in_features': module.in_features, 
+                'out_features': module.out_features, 
+                'length': len(mask), 
+                'topk': r, 
+                'mask': mask.tolist(),
+                'has_sparse': False
+            })
 
     return compression_logs
 
@@ -151,7 +195,17 @@ class CompressionCalculator:
             else:
                 rank = module.E_train_mask.detach().sum().item()
 
-            params_with_compression =  rank * (module.in_features + module.out_features)
+            # Check if this is an SLR_AM layer with sparse component
+            has_sparse = hasattr(module, 'sparse')
+            
+            # Calculate parameters with compression
+            params_with_compression = rank * (module.in_features + module.out_features)
+            
+            # Add sparse component parameters if present
+            if has_sparse:
+                sparse_nnz = torch.count_nonzero(module.sparse).item()
+                params_with_compression += sparse_nnz
+                
             params_wo_compression = module.in_features * module.out_features
 
             # in reality, layer is not compressed when compression is huge
