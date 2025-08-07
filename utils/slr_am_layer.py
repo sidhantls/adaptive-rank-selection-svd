@@ -69,8 +69,9 @@ class LowrankLinearSimpleSLR(torch.nn.Module):
         U_s, E_s, V_s = torch.svd_lowrank(Y_sparse_tensor, q=corr_rank, niter=niter)
         # Apply inverse scaling if needed
         if svd_vector is not None:
-            V_lr = V_lr / svd_vector.unsqueeze(1)
-            V_s = V_s / svd_vector.unsqueeze(1)
+            svd_vector_device = svd_vector.to(V_lr.device)
+            V_lr = V_lr / svd_vector_device.unsqueeze(1)
+            V_s = V_s / svd_vector_device.unsqueeze(1)
         # Move to correct device and dtype
         U_lr, E_lr, V_lr = U_lr.to(layer_device), E_lr.to(layer_device), V_lr.to(layer_device)
         U_s, E_s, V_s = U_s.to(layer_device), E_s.to(layer_device), V_s.to(layer_device)
