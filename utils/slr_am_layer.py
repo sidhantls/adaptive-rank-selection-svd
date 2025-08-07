@@ -29,10 +29,11 @@ class LowrankLinearSimpleSLR(torch.nn.Module):
         self.rank = min(current_layer.weight.shape[1], current_layer.weight.shape[0])
 
         weight = current_layer.weight.float()
-        layer_device = weight.device
 
         if torch.cuda.is_available():
             weight = weight.cuda()
+
+        layer_device = weight.device
 
         # Apply activation/loss aware scaling if provided
         if svd_vector is not None: 
