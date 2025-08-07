@@ -387,7 +387,7 @@ def training_step(model, batch, pad_token_id, args, compression_calculator, is_e
     if is_eval: 
         return None, logits_loss, None, None, perplexity, None, None, None
 
-    if args.method in ['slr_am']:
+    if args.layer_type in ['simple2']:
         r_align_loss = torch.tensor(0., device=logits_loss.device)
     else:
         r_align_loss = calculate_r_align(compression_calculator)
