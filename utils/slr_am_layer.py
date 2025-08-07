@@ -1,5 +1,4 @@
 import torch
-import numpy as np
 from utils.lowrank_methods.alternating_minimization import SLR_AM
 from utils.adaptive_rank_selection import gumbel_sigmoid, STE
 
@@ -8,7 +7,7 @@ class LowrankLinearSimpleSLR(torch.nn.Module):
                  k_sparse_ratio=0.1, mu=1.0, lambda_reg=1.0, corr_rank=None):
         """
         Linear estimator for the mask using SLR_AM (Sparse Low-Rank Alternating Minimization)
-        instead of SVD.
+        with PyTorch tensor support.
         
         Args:
             current_layer: The original linear layer to decompose
@@ -41,32 +40,30 @@ class LowrankLinearSimpleSLR(torch.nn.Module):
             svd_vector = svd_vector.to(weight.device)**alpha
             weight = weight * svd_vector.unsqueeze(0)
         
-        # Convert to numpy for SLR_AM
-        weight_np = weight.detach().cpu().numpy()
-        
         # Calculate number of sparse elements to keep
-        total_elements = weight_np.shape[0] * weight_np.shape[1]
+        total_elements = weight.shape[0] * weight.shape[1]
         k_sparse = int(k_sparse_ratio * total_elements)
         
-        # Run SLR_AM to get low-rank and sparse components
+        # Run SLR_AM to get low-rank and sparse components (now expects PyTorch tensors)
         with torch.no_grad():
             (X_lr, Y_sparse), _ = SLR_AM(
-                weight_np,
+                weight,
                 mu=mu,
                 lambda_reg=lambda_reg,
                 k_sparse=k_sparse,
                 k_rank=self.rank,
+                device=str(weight.device),
                 random_restarts=1,
                 exact_svd=True
             )
-        # Convert back to PyTorch tensors
-        X_lr_tensor = torch.tensor(X_lr, device=layer_device)
-        Y_sparse_tensor = torch.tensor(Y_sparse, device=layer_device)
+        # Ensure tensors are on the correct device
+        X_lr = X_lr.to(layer_device)
+        Y_sparse = Y_sparse.to(layer_device)
         # Perform SVD on the low-rank component to get U, E, V
-        U_lr, E_lr, V_lr = torch.svd_lowrank(X_lr_tensor, q=self.rank, niter=niter)
+        U_lr, E_lr, V_lr = torch.svd_lowrank(X_lr, q=self.rank, niter=niter)
         # Factorize sparse correction into low-rank of size corr_rank
         corr_rank = corr_rank if corr_rank is not None else min(self.rank, 10)
-        U_s, E_s, V_s = torch.svd_lowrank(Y_sparse_tensor, q=corr_rank, niter=niter)
+        U_s, E_s, V_s = torch.svd_lowrank(Y_sparse, q=corr_rank, niter=niter)
         # Apply inverse scaling if needed
         if svd_vector is not None:
             svd_vector_device = svd_vector.to(V_lr.device)
