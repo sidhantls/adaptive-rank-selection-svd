@@ -360,3 +360,10 @@ if args.eval_full:
     harness_metrics_full = {'final_' + k: v for k, v in harness_metrics_full.items()}
     wandb.log({**harness_metrics_full, 'step': global_step})
     print('Final harness results: \n', harness_metrics_full, '\n')
+
+else:
+    model = model.eval()
+    harness_metrics = eval_utils.evaluate_with_harness(model, tokenizer, device=model.device, debug=args.debug, batch_size=args.eval_batch_size)
+    harness_metrics_full = {'final_' + k: v for k, v in harness_metrics.items()}
+    wandb.log({**harness_metrics_full, 'step': global_step})
+    print('Final harness results: \n', harness_metrics_full, '\n')
