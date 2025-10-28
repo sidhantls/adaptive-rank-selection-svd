@@ -21,7 +21,7 @@ This repository contains the implementation two differentiable low-rank compress
 * **Learning to Low-Rank Compress:**
   * This method introduces a simpler rank selection layer, which is parameterized as a linear layer. Through this, optimal ranks for low-rank decomposition are learned per layer.
   * There are some simplifications to make the codebase more uniform across both implementations—for example, the distillation objective and total variation loss from the original work are not included. However, as noted in the Appendix, using a pre-training loss provides similar performance (albeit slightly lower).
-  * Once the rank selection training is complete, we use the heuristic described in the paper to convert the model to its final form: [link](https://github.com/sidhantls/adaptive-rank-selection-svd/blob/7a5fcd9039faee99cc23f6f129c104d629bd2f37/utils/convert_model.py#L37)
+  * Once the rank selection training is complete, we use the heuristic described in the paper to convert the model to its final form: [code](https://github.com/sidhantls/adaptive-rank-selection-svd/blob/7a5fcd9039faee99cc23f6f129c104d629bd2f37/utils/convert_model.py#L37)
   * **Rank Selection Layer:** [Module](https://github.com/sidhantls/adaptive-rank-selection-svd/blob/a2be7e398a6fa2a78fc5c049dde36fba6a20b258/utils/adaptive_rank_selection.py#L196)
 
 
