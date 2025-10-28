@@ -12,14 +12,16 @@ This repository contains the implementation two differentiable low-rank compress
 
 ## Implementation Details
 * **Adaptive Rank Selections for Low-Rank Approximation of Language Models:**
-  * Unofficial implementation of the paper *"Adaptive Rank Selections for Low-Rank Approximation of Language Models"*. The method introduces learnable neural networks to predict optimal decomposition ranks. This repository only implements the rank selection step—i.e., it only implements [Algorithm 1: Adaptive Rank Selection](https://aclanthology.org/2024.naacl-long.13.pdf). Fine-tuning after rank selection is not implemented.
+  * The method introduces learnable neural networks to predict optimal decomposition ranks. This repository only implements the rank selection step—i.e., it only implements [Algorithm 1: Adaptive Rank Selection](https://aclanthology.org/2024.naacl-long.13.pdf). Fine-tuning after rank selection is not implemented.
   * **Caveats:**
     * In the main branch, the rank selection layer differs from the original work, assigning one GRU to each layer. Refer to the `fix_hypernet` branch for the exact implementation, where one GRU is used overall, and only linear projection layers are assigned per layer for mask prediction.
     * Implementation of SVD: ASVD and Fisher SVD are implemented here, while IWSVD is not. IWSVD is used in the final paper.
   * **Rank Selection Layer:** [Module](https://github.com/sidhantls/adaptive-rank-selection-svd/blob/a2be7e398a6fa2a78fc5c049dde36fba6a20b258/utils/adaptive_rank_selection.py#L59)
 
 * **Learning to Low-Rank Compress:**
-  * This includes an implementation of *Learning to Low-Rank Compress*. There are some simplifications to make the codebase more uniform across both implementations—for example, the distillation objective and total variation loss from the original work are not included. However, as noted in the Appendix, using a pre-training loss provides similar performance (albeit slightly lower).
+  * This method introduces a simpler rank selection layer, which is parameterized as a linear layer. Through this, optimal ranks for low-rank decomposition are learned per layer.
+  * There are some simplifications to make the codebase more uniform across both implementations—for example, the distillation objective and total variation loss from the original work are not included. However, as noted in the Appendix, using a pre-training loss provides similar performance (albeit slightly lower).
+  * Once the rank selection training is complete, we use the heuristic described in the paper to convert the model to its final form: [link](https://github.com/sidhantls/adaptive-rank-selection-svd/blob/7a5fcd9039faee99cc23f6f129c104d629bd2f37/utils/convert_model.py#L37)
   * **Rank Selection Layer:** [Module](https://github.com/sidhantls/adaptive-rank-selection-svd/blob/a2be7e398a6fa2a78fc5c049dde36fba6a20b258/utils/adaptive_rank_selection.py#L196)
 
 
